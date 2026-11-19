@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#1f2937">
+<title>Einkaufsliste</title>
+<style>
+:root{--bg:#f4f4f2;--card:#fff;--ink:#1f2937;--mute:#6b7280;--line:#e5e7eb;--acc:#f5c400;--ok:#16a34a}
+*{box-sizing:border-box}
+body{margin:0;font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:env(safe-area-inset-bottom)}
+header{position:sticky;top:0;z-index:5;background:var(--ink);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 12px 0}
+.top{display:flex;align-items:center;gap:8px}
+.top h1{font-size:18px;margin:0;flex:1}
+.top button{background:none;border:0;color:#fff;font-size:20px;padding:4px 6px}
+.status{font-size:12px;opacity:.7;min-height:16px}
+nav{display:flex;gap:4px;margin-top:8px;overflow-x:auto}
+nav button{flex:1;border:0;border-radius:10px 10px 0 0;padding:10px 8px;font-size:15px;font-weight:600;background:#374151;color:#d1d5db;white-space:nowrap}
+nav button.on{background:var(--bg);color:var(--ink)}
+nav .n{display:inline-block;min-width:20px;margin-left:4px;padding:0 6px;border-radius:10px;background:var(--acc);color:#111;font-size:12px}
+main{padding:12px;max-width:640px;margin:0 auto}
+.add{display:flex;gap:6px;position:sticky;top:0}
+.add input{flex:1;font-size:17px;padding:12px;border:1px solid var(--line);border-radius:10px}
+.sugg{background:var(--card);border-radius:10px;margin-top:6px;box-shadow:0 4px 14px rgba(0,0,0,.08);overflow:hidden}
+.sugg div{padding:11px 12px;border-bottom:1px solid var(--line);cursor:pointer}
+.sugg div:last-child{border:0}
+.sugg small,.item small{color:var(--mute)}
+.chips{display:flex;flex-wrap:wrap;gap:6px;margin:12px 0}
+.chips button{border:1px solid var(--line);background:var(--card);border-radius:16px;padding:6px 10px;font-size:14px}
+h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute);margin:18px 4px 6px}
+.item{display:flex;align-items:center;gap:10px;background:var(--card);padding:12px;border-radius:10px;margin-bottom:6px;cursor:pointer;user-select:none}
+.item .box{width:24px;height:24px;border:2px solid #9ca3af;border-radius:6px;flex:none;display:grid;place-items:center;color:#fff;font-size:15px}
+.item.done{opacity:.55}
+.item.done .box{background:var(--ok);border-color:var(--ok)}
+.item.done .t{text-decoration:line-through}
+.item .t{flex:1}
+.item .x{border:0;background:none;color:var(--mute);font-size:20px;padding:0 4px}
+.qty{font-weight:700;margin-right:4px}
+.btn{display:block;width:100%;border:0;border-radius:10px;padding:14px;font-size:16px;font-weight:600;background:var(--ok);color:#fff;margin-top:14px}
+.btn.sec{background:#e5e7eb;color:var(--ink)}
+.empty{text-align:center;color:var(--mute);padding:30px 10px}
+.setup{background:var(--card);border-radius:12px;padding:16px}
+.setup label{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
+.setup input{width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px}
+.err{color:#b91c1c;margin-top:10px}
+dialog{border:0;border-radius:14px;padding:16px;width:min(92vw,420px)}
+dialog input,dialog select{width:100%;font-size:16px;padding:10px;margin:4px 0 10px;border:1px solid var(--line);border-radius:8px}
+dialog label{font-size:13px;color:var(--mute)}
+.row{display:flex;gap:8px}
+.stats div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
+</style>
+</head>
+<body>
+<header>
+  <div class="top"><h1>🛒 Einkaufsliste</h1><button id="bStats" title="Statistik">📊</button><button id="bSync" title="Neu laden">⟳</button><button id="bCfg" title="Einstellungen">⚙︎</button></div>
+  <div class="status" id="status"></div>
+  <nav id="tabs"></nav>
+</header>
+<main id="main"></main>
+
+<dialog id="dlg">
+  <form method="dialog" id="dlgForm">
+    <h3 style="margin-top:0">Neuer Artikel</h3>
+    <label>Name</label><input id="fName" required>
+    <label>Marke (optional)</label><input id="fMarke">
+    <div class="row">
+      <div style="flex:1"><label>Geschäft</label><select id="fShop"></select></div>
+      <div style="flex:1"><label>Kategorie</label><input id="fKat" list="kats"></div>
+    </div>
+    <datalist id="kats"></datalist>
+    <div class="row"><button class="btn sec" value="cancel" type="button" id="fCancel">Abbrechen</button><button class="btn" value="ok">Hinzufügen</button></div>
+  </form>
+</dialog>
+
+<script>
+"use strict";
+const LS='einkauf.cfg';
+let cfg=JSON.parse(localStorage.getItem(LS)||'null');
+let data=null, sha=null, shop=null, query='', busy=false;
+const $=s=>document.querySelector(s);
+const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
+const today=()=>new Date().toISOString().slice(0,10);
+const setStatus=t=>$('#status').textContent=t;
+
+/* ---------- GitHub ---------- */
+const b64dec=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,'')),c=>c.charCodeAt(0)));
+const b64enc=s=>{const b=new TextEncoder().encode(s);let r='';for(let i=0;i<b.length;i+=0x8000)r+=String.fromCharCode(...b.subarray(i,i+0x8000));return btoa(r)};
+const api=()=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path||'liste.json'}`;
+const hdr=()=>({Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});
+
+async function load(){
+  const r=await fetch(api()+'?t='+Date.now(),{headers:hdr(),cache:'no-store'});
+  if(!r.ok) throw new Error(r.status===401?'Token ungültig':r.status===404?'Repo oder Datei nicht gefunden':'Fehler '+r.status);
+  const j=await r.json(); sha=j.sha; data=JSON.parse(b64dec(j.content));
+  data.liste??=[]; data.historie??=[];
+}
+async function save(msg){
+  const r=await fetch(api(),{method:'PUT',headers:hdr(),body:JSON.stringify({message:msg+' ('+(cfg.name||'?')+')',content:b64enc(JSON.stringify(data,null,1)),sha})});
+  if(r.status===409||r.status===422) return false;
+  if(!r.ok) throw new Error('Speichern fehlgeschlagen: '+r.status);
+  sha=(await r.json()).content.sha; return true;
+}
+/* Änderung anwenden; bei Konflikt neu laden und erneut anwenden */
+async function change(msg,fn){
+  if(busy) return; busy=true; setStatus('Speichere…');
+  try{
+    fn(data); render();
+    for(let i=0;i<4;i++){
+      if(await save(msg)){setStatus('Gespeichert '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}));return}
+      await load(); fn(data); render();
+    }
+    throw new Error('Konflikt – bitte neu laden');
+  }catch(e){setStatus('⚠︎ '+e.message)}finally{busy=false}
+}
+async function refresh(){
+  if(busy||!cfg) return;
+  try{setStatus('Lade…');await load();render();setStatus('Aktuell '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'}))}
+  catch(e){setStatus('⚠︎ '+e.message)}
+}
+
+/* ---------- Logik ---------- */
+const prod=id=>data.katalog.find(p=>p.id===id);
+const label=p=>p.marke?`${p.marke} ${p.name}`:p.name;
+function freq(){const f={};for(const h of data.historie)f[h.id]=(f[h.id]||0)+(h.anzahl||1);return f}
+function lastBought(id){let d='';for(const h of data.historie)if(h.id===id&&h.datum>d)d=h.datum;return d}
+function shopItems(s){return data.liste.filter(l=>{const p=prod(l.id);return p&&p.geschaeft===s})}
+
+function addItem(id){
+  change('+ '+label(prod(id)),d=>{
+    const e=d.liste.find(l=>l.id===id&&!l.erledigt);
+    if(e) e.anzahl=(e.anzahl||1)+1; else d.liste.push({id,anzahl:1,von:cfg.name||'',am:today()});
+  });
+  query='';
+}
+/* Laufweg: Startreihenfolge aus den Gängen des Geschäfts, danach gelernt aus der Abhak-Reihenfolge */
+function defRank(d,s,p){
+  const g=d.geschaefte.find(x=>x.id===s)?.gaenge||[];
+  let i=g.indexOf(p.kategorie);
+  if(i<0) i=g.length+[...new Set(d.katalog.map(x=>x.kategorie))].sort((a,b)=>a.localeCompare(b,'de')).indexOf(p.kategorie);
+  return i*10000+d.katalog.findIndex(x=>x.id===p.id);
+}
+const rankOf=(d,s,p)=>d.reihenfolge?.[s]?.[p.id]??defRank(d,s,p);
+function toggle(id){
+  const t=Date.now();
+  change('✓ '+label(prod(id)),d=>{const e=d.liste.find(l=>l.id===id);if(e){e.erledigt=!e.erledigt;if(e.erledigt)e.um=t;else delete e.um}});
+}
+function remove(id){change('− '+label(prod(id)),d=>{d.liste=d.liste.filter(l=>l.id!==id)})}
+function finish(){
+  const n=shopItems(shop).filter(l=>l.erledigt).length; if(!n) return;
+  const s=shop;
+  change(`Einkauf ${data.geschaefte.find(g=>g.id===s).name}: ${n} Artikel`,d=>{
+    const done=d.liste.filter(l=>l.erledigt&&prod(l.id)?.geschaeft===s);
+    /* Die abgehakten Artikel tauschen ihre Plätze im Laufweg so, dass sie der tatsächlichen Abhak-Reihenfolge entsprechen */
+    const seq=[...done].sort((a,b)=>(a.um||0)-(b.um||0)).map(l=>d.katalog.find(x=>x.id===l.id)).filter(Boolean);
+    if(seq.length>1){
+      const slots=seq.map(p=>rankOf(d,s,p)).sort((a,b)=>a-b);
+      d.reihenfolge??={}; d.reihenfolge[s]??={};
+      seq.forEach((p,i)=>d.reihenfolge[s][p.id]=slots[i]);
+    }
+    for(const l of done) d.historie.push({id:l.id,datum:today(),anzahl:l.anzahl||1,wer:cfg.name||''});
+    d.liste=d.liste.filter(l=>!done.includes(l));
+  });
+}
+function newProduct(){
+  $('#fShop').innerHTML=data.geschaefte.map(g=>`<option value="${g.id}" ${g.id===shop?'selected':''}>${esc(g.name)}</option>`).join('');
+  $('#kats').innerHTML=[...new Set(data.katalog.map(p=>p.kategorie))].map(k=>`<option value="${esc(k)}">`).join('');
+  $('#fName').value=query;$('#fMarke').value='';$('#fKat').value='';
+  $('#dlg').showModal();
+}
+$('#fCancel').onclick=()=>$('#dlg').close();
+$('#dlgForm').onsubmit=e=>{
+  e.preventDefault();
+  const name=$('#fName').value.trim(); if(!name) return;
+  const p={id:'p'+Date.now().toString(36),name,marke:$('#fMarke').value.trim(),kategorie:$('#fKat').value.trim()||'Sonstiges',geschaeft:$('#fShop').value};
+  $('#dlg').close(); shop=p.geschaeft; query='';
+  change('Neu: '+label(p),d=>{if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);d.liste.push({id:p.id,anzahl:1,von:cfg.name||'',am:today()})});
+};
+
+/* ---------- Ansicht ---------- */
+function renderTabs(){
+  $('#tabs').innerHTML=data.geschaefte.map(g=>{
+    const n=shopItems(g.id).filter(l=>!l.erledigt).length;
+    return `<button data-s="${g.id}" class="${g.id===shop?'on':''}">${esc(g.name)}${n?`<span class="n">${n}</span>`:''}</button>`}).join('');
+  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{shop=b.dataset.s;query='';render()});
+}
+function render(){
+  if(!cfg){renderSetup();return}
+  if(!data) return;
+  shop??=data.geschaefte[0].id;
+  renderTabs();
+  const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
+  const cand=data.katalog.filter(p=>p.geschaeft===shop||p.auchBei===shop);
+  const score=p=>(f[p.id]||0)*10+(p.favorit?5:0);
+  let html=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"></div>`;
+  if(query){
+    const q=query.toLowerCase();
+    const hits=cand.filter(p=>label(p).toLowerCase().includes(q)||p.kategorie.toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a)).slice(0,12);
+    html+=`<div class="sugg">${hits.map(p=>`<div data-add="${p.id}">${onList.has(p.id)?'➕ ':''}${esc(label(p))} <small>${esc(p.menge||'')} · ${esc(p.kategorie)}</small></div>`).join('')}
+      <div data-new="1">＋ „${esc(query)}“ als neuen Artikel anlegen</div></div>`;
+  }else{
+    const top=cand.filter(p=>!onList.has(p.id)).sort((a,b)=>score(b)-score(a)).slice(0,10);
+    if(top.length) html+=`<div class="chips">${top.map(p=>`<button data-add="${p.id}">${esc(p.marke?p.name+' ('+p.marke+')':p.name)}</button>`).join('')}</div>`;
+  }
+  const items=shopItems(shop);
+  if(!items.length) html+=`<div class="empty">Nichts auf der Liste 🎉</div>`;
+  const row=l=>{const p=prod(l.id);return `<div class="item ${l.erledigt?'done':''}" data-t="${l.id}"><span class="box">${l.erledigt?'✓':''}</span>
+        <span class="t">${(l.anzahl||1)>1?`<span class="qty">${l.anzahl}×</span>`:''}${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}${l.von?' · '+esc(l.von):''}</small></span>
+        <button class="x" data-x="${l.id}">✕</button></div>`};
+  const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,shop,prod(a.id))-rankOf(data,shop,prod(b.id)));
+  const inCart=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
+  let last=null;
+  for(const l of open){const k=prod(l.id).kategorie;if(k!==last){html+=`<h2>${esc(k)}</h2>`;last=k}html+=row(l)}
+  if(inCart.length){html+=`<h2>Im Wagen</h2>`;inCart.forEach(l=>html+=row(l))}
+  if(items.some(l=>l.erledigt)) html+=`<button class="btn" id="fin">Einkauf abschließen (${items.filter(l=>l.erledigt).length})</button>`;
+  $('#main').innerHTML=html;
+  const q=$('#q'); q.oninput=()=>{query=q.value;render();const n=$('#q');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+  $('#main').querySelectorAll('[data-add]').forEach(e=>e.onclick=()=>addItem(e.dataset.add));
+  $('#main').querySelectorAll('[data-new]').forEach(e=>e.onclick=newProduct);
+  $('#main').querySelectorAll('[data-t]').forEach(e=>e.onclick=ev=>{if(!ev.target.dataset.x)toggle(e.dataset.t)});
+  $('#main').querySelectorAll('[data-x]').forEach(e=>e.onclick=()=>remove(e.dataset.x));
+  $('#fin')&&($('#fin').onclick=finish);
+}
+function renderStats(){
+  if(!data) return;
+  const f=freq();
+  const rows=data.katalog.map(p=>({p,n:f[p.id]||0,d:lastBought(p.id)})).sort((a,b)=>b.n-a.n);
+  const never=rows.filter(r=>!r.n).length;
+  $('#tabs').innerHTML='';
+  $('#main').innerHTML=`<div class="setup stats"><h3 style="margin-top:0">Kaufhäufigkeit</h3>
+    <p style="color:var(--mute);font-size:14px">${data.historie.length} Käufe erfasst · ${never} von ${rows.length} Katalogartikeln noch nie gekauft</p>
+    ${rows.filter(r=>r.n).map(r=>`<div><span>${esc(label(r.p))}</span><span>${r.n}× · ${r.d.split('-').reverse().join('.')}</span></div>`).join('')||'<p>Noch keine abgeschlossenen Einkäufe.</p>'}
+    <button class="btn sec" id="back">Zurück</button></div>`;
+  $('#back').onclick=render;
+}
+function renderSetup(){
+  $('#tabs').innerHTML='';
+  const c=cfg||{owner:'',repo:'',path:'liste.json',token:'',name:''};
+  $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">Einrichtung</h3>
+    <p style="font-size:14px;color:var(--mute)">Einmal pro Gerät. Der Schlüssel bleibt nur in diesem Browser gespeichert.</p>
+    <label>Dein Name</label><input id="sName" value="${esc(c.name)}" placeholder="z. B. Ingo">
+    <label>GitHub-Benutzer / Organisation</label><input id="sOwner" value="${esc(c.owner)}" autocapitalize="off">
+    <label>Repository</label><input id="sRepo" value="${esc(c.repo)}" autocapitalize="off" placeholder="einkaufsliste-daten">
+    <label>Datei</label><input id="sPath" value="${esc(c.path)}" autocapitalize="off">
+    <label>Schlüssel (Fine-grained Token)</label><input id="sToken" type="password" value="${esc(c.token)}" autocapitalize="off" placeholder="github_pat_…">
+    <button class="btn" id="sGo">Verbinden</button>
+    ${cfg?'<button class="btn sec" id="sOut">Schlüssel von diesem Gerät entfernen</button>':''}
+    <div class="err" id="sErr"></div></div>`;
+  $('#sGo').onclick=async()=>{
+    cfg={name:$('#sName').value.trim(),owner:$('#sOwner').value.trim(),repo:$('#sRepo').value.trim(),path:$('#sPath').value.trim()||'liste.json',token:$('#sToken').value.trim()};
+    try{await load();localStorage.setItem(LS,JSON.stringify(cfg));shop=null;render();setStatus('Verbunden')}
+    catch(e){$('#sErr').textContent=e.message;cfg=null}
+  };
+  $('#sOut')&&($('#sOut').onclick=()=>{localStorage.removeItem(LS);cfg=null;data=null;renderSetup()});
+}
+
+$('#bCfg').onclick=renderSetup;
+$('#bSync').onclick=refresh;
+$('#bStats').onclick=renderStats;
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
+setInterval(()=>{if(!document.hidden&&!query)refresh()},30000);
+cfg?refresh():renderSetup();
+</script>
+</body>
+</html>
