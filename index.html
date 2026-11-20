@@ -145,6 +145,11 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .rv.unk{opacity:.8}
 .rv .step button{width:32px;height:32px}
 .item .qty{flex:none;margin:0 2px 0 6px;font-size:14px;text-align:right;white-space:nowrap}
+.chk{display:flex;align-items:center;gap:8px;font-size:14px;margin:10px 0 2px;color:var(--fg)}
+.chk input{width:20px;height:20px;margin:0}
+#fScanNew svg{vertical-align:-4px;margin-right:4px}
+.newp{display:block;width:100%;text-align:left;border:0;border-radius:8px;background:var(--stepbg);padding:7px 10px;margin-bottom:4px;font-size:14px}
+.newp small{color:var(--mute)}
 </style>
 </head>
 <body>
@@ -175,6 +180,8 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
     </div>
     <datalist id="kats"></datalist>
     <button type="button" class="btn sec" id="fScan" hidden>Barcode diesem Produkt zuordnen</button>
+    <button type="button" class="btn sec" id="fScanNew" hidden>Barcode scannen</button>
+    <label class="chk" id="fToListL"><input type="checkbox" id="fToList"> Gleich auf die Einkaufsliste setzen</label>
     <div class="row"><button class="btn sec" value="cancel" type="button" id="fCancel">Abbrechen</button><button class="btn" value="ok" id="fOk">Hinzufügen</button></div>
   </form>
 </dialog>
@@ -212,6 +219,7 @@ const LS='einkauf.cfg';
 let cfg=JSON.parse(localStorage.getItem(LS)||'null');
 let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null, panel=null, xq=null, addingShop=false, newShopDefault=''; const cnt={};
 const $=s=>document.querySelector(s);
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
 let toastT=null;
@@ -267,20 +275,44 @@ async function save(msg){
 }
 /* Änderung anwenden; bei Konflikt neu laden und erneut anwenden */
 /* Jede Aktion: sofort anzeigen, dann frischen Stand holen, Änderung darauf anwenden und speichern */
-async function change(msg,fn){
-  if(busy) return; busy=true;
+/* Aktionen werden sofort angezeigt und in einer Warteschlange nacheinander gespeichert –
+   schnelle Folgen (z. B. mehrfaches Wischen) gehen nicht verloren; bei Konflikt neu laden und erneut anwenden,
+   bei Netzfehlern bis zu fünfmal neu versuchen */
+const ops=[]; let worker=null, lastSave=0;
+function change(msg,fn){
+  return new Promise(res=>{
+    try{fn(data)}catch(e){console.error(e)}
+    render();
+    ops.push({msg,fn,res});
+    if(!worker) worker=work();
+  });
+}
+async function work(){
+  busy=true;
   try{
-    fn(data); render();
-    for(let i=0;i<4;i++){
-      await load(); fn(data); render();
-      if(await save(msg)) return;
+    while(ops.length){
+      const batch=ops.splice(0);
+      const msg=batch.length>1?`${batch.length} Änderungen: `+batch.map(o=>o.msg).join('; ').slice(0,180):batch[0].msg;
+      let ok=false;
+      for(let i=0;i<6&&!ok;i++){
+        try{
+          ok=await save(msg);
+          if(!ok){await load();for(const o of [...batch,...ops])o.fn(data);render()}
+        }catch(e){if(i===5)throw e;await sleep(700*(i+1))}
+      }
+      if(!ok) throw new Error('Konflikt – bitte neu laden');
+      lastSave=Date.now();
+      batch.forEach(o=>o.res());
     }
-    throw new Error('Konflikt – bitte neu laden');
-  }catch(e){setStatus('⚠︎ '+e.message)}finally{busy=false}
+  }catch(e){
+    setStatus('⚠︎ Speichern fehlgeschlagen – bitte neu laden ('+e.message+')');
+    ops.splice(0).forEach(o=>o.res());
+    try{await load();render()}catch{}
+  }finally{busy=false;worker=null}
 }
 /* Aktualisieren beim Öffnen/Zurückkehren und beim Wechseln der Ansicht */
 async function refresh(){
-  if(busy||!cfg) return;
+  if(busy||!cfg||Date.now()-lastSave<5000) return;
   try{await load();await checkDevice();if(!document.querySelector('dialog[open]'))render();await autoFinish()}
   catch(e){if(e.message==='BLOCKED')return renderBlocked();setStatus('⚠︎ '+e.message)}
 }
@@ -300,7 +332,6 @@ async function checkDevice(){
   /* erster Start mit diesem Schlüssel: der allererste wird Administrator, alle weiteren Familienmitglieder */
   myRole=Object.values(g).some(x=>x.rolle==='admin')?'mitglied':'admin';
   const h=myHash, role=myRole, name=cfg.name||'?';
-  busy=false;
   await change('Gerät angemeldet: '+name,d=>{d.geraete??={};if(!d.geraete[h])d.geraete[h]={name,rolle:role,geraet:deviceId,seit:today()}});
 }
 function renderBlocked(){
@@ -364,16 +395,27 @@ async function autoFinish(){
     if(Date.now()-last>AUTO_MS){await finish(s,true);setStatus(`Einkauf ${shopName(s)} automatisch abgeschlossen`)}
   }
 }
-function newProduct(){
+function newProduct(toList=true){
   const defShop=newShopDefault||(view==='shop'?shop:''); newShopDefault='';
   $('#fShop').innerHTML=`<option value="">– bitte wählen –</option>`+data.geschaefte.filter(g=>SHOPS().includes(g.id)).map(g=>`<option value="${g.id}" ${g.id===defShop?'selected':''}>${esc(g.name)}</option>`).join('');
   $('#kats').innerHTML=[...new Set(data.katalog.map(p=>p.kategorie))].map(k=>`<option value="${esc(k)}">`).join('');
   $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';$('#fMenge').value='';
   $('#fEinh').innerHTML=Object.keys(EINH).map(u=>`<option>${u}</option>`).join('');$('#fEinh').value='Stück';
-  editId=null;scanEan=null;$('#dlgT').textContent='Neuer Artikel';$('#fOk').textContent='Hinzufügen';$('#fAssBox').hidden=true;$('#fScan').hidden=true;
+  editId=null;scanEan=null;$('#dlgT').textContent='Neuer Artikel';$('#fOk').textContent=toList?'Hinzufügen':'Anlegen';$('#fAssBox').hidden=true;$('#fScan').hidden=true;
+  $('#fScanNew').hidden=false;$('#fScanNew').innerHTML=BC_ICON+' Barcode scannen';$('#fToListL').hidden=false;$('#fToList').checked=toList;
   $('#dlg').showModal();
 }
 $('#fCancel').onclick=()=>$('#dlg').close();
+$('#fScanNew').onclick=async()=>{
+  const keep={n:$('#fName').value,m:$('#fMarke').value,k:$('#fKat').value,s:$('#fShop').value,e:$('#fEinh').value,g:$('#fMenge').value,t:$('#fToList').checked};
+  $('#dlg').close();
+  const code=await scanBarcode(); if(!code){$('#dlg').showModal();return}
+  const known=byEan(code);
+  query=keep.n; newProduct(keep.t); query='';
+  $('#fMarke').value=keep.m;$('#fKat').value=keep.k;$('#fShop').value=keep.s;$('#fEinh').value=keep.e;$('#fMenge').value=keep.g;
+  if(known){$('#dlg').close();setStatus(`Barcode gehört schon zu: ${label(known)}`);return showProduct(known.id)}
+  await fillFromCode(code,true);
+};
 let editId=null;
 function editProduct(id){
   const p=prod(id); if(!p) return;
@@ -381,7 +423,7 @@ function editProduct(id){
   editId=id;$('#dlgT').textContent='Artikel bearbeiten';$('#fOk').textContent='Speichern';
   $('#fName').value=p.name;$('#fMarke').value=p.marke||'';$('#fKat').value=p.kategorie;$('#fMenge').value=p.menge||'';
   $('#fEinh').value=unitOf(p);$('#fShop').value=SHOPS().includes(p.geschaeft)?p.geschaeft:'';
-  $('#fScan').hidden=false;
+  $('#fScan').hidden=false;$('#fScanNew').hidden=true;$('#fToListL').hidden=true;
   $('#fScan').innerHTML=BC_ICON+' '+(p.eans?.length?`Weiteren Barcode zuordnen (${p.eans.length} gespeichert)`:'Barcode diesem Produkt zuordnen');
 }
 $('#fScan').onclick=async()=>{
@@ -389,7 +431,7 @@ $('#fScan').onclick=async()=>{
   const code=await scanBarcode(); if(!code) return;
   addEan(id,code);
 };
-async function assignTo(id){const code=scanEan;if(!id||!code)return;$('#dlg').close();await addEan(id,code);while(busy)await sleep(100);await send(id);setStatus('Zugeordnet und auf die Liste gesetzt')}
+async function assignTo(id){const code=scanEan,toList=$('#fToList').checked;if(!id||!code)return;$('#dlg').close();await addEan(id,code);if(!toList){setStatus('Barcode zugeordnet: '+label(prod(id)));if(view==='info')render();return}await send(id);setStatus('Zugeordnet und auf die Liste gesetzt')}
 let assInfo=null;
 function renderAssList(){
   const q=$('#fAssQ').value.trim().toLowerCase();
@@ -412,10 +454,18 @@ $('#dlgForm').onsubmit=e=>{
   const p={id:'p'+Date.now().toString(36),name,marke:$('#fMarke').value.trim(),kategorie:$('#fKat').value.trim()||'Sonstiges',geschaeft:$('#fShop').value,einheit:$('#fEinh').value};
   const mg=$('#fMenge').value.trim(); if(mg) p.menge=mg;
   if(scanEan) p.eans=[scanEan];
+  p.angelegt=today();
+  const toList=$('#fToList').checked;
   $('#dlg').close(); query='';
   (async()=>{
     if(!p.geschaeft){p.geschaeft=await askShop(p);if(!p.geschaeft)return}
-    change('Neu: '+label(p),d=>{if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);d.liste.push({id:p.id,anzahl:stepOf(p),von:cfg.name||'',am:today(),ts:Date.now()})});
+    await change('Neu: '+label(p),d=>{
+      if(scanEan) for(const x of d.katalog) if(x.eans) x.eans=x.eans.filter(c=>c!==scanEan);
+      if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);
+      if(toList) d.liste.push({id:p.id,anzahl:stepOf(p),von:cfg.name||'',am:today(),ts:Date.now()});
+    });
+    setStatus(toList?`${p.name} angelegt und auf die Liste gesetzt`:`${p.name} angelegt`);
+    if(view==='info') render();
   })();
 };
 
@@ -628,7 +678,6 @@ function similar(info){
   return [...data.katalog].map(p=>({p,s:sc(p)})).sort((a,b)=>b.s-a.s||a.p.name.localeCompare(b.p.name,'de'));
 }
 /* Fortlaufend scannen: bekannte Artikel sofort auf ihre Liste, unbekannte danach nacheinander anlegen/zuordnen */
-const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const waitClose=dl=>new Promise(r=>dl.addEventListener('close',r,{once:true}));
 async function onScan(){
   /* während des Scannens nur sammeln; Duplikate werden zusammengefasst und vor dem Übernehmen geprüft */
@@ -688,11 +737,18 @@ function reviewScan(items){
   });
 }
 async function newFromCode(code){
-  setStatus('Unbekannter Barcode – suche Produktdaten…');
+  newProduct(); await fillFromCode(code,false);
+}
+/* Barcode-Daten nachschlagen und in den offenen Dialog übernehmen (leere Felder werden ergänzt) */
+async function fillFromCode(code,keepFilled){
+  setStatus('Suche Produktdaten…');
   const info=await lookupEan(code);
-  query=info?.name||''; newProduct(); query='';
-  scanEan=code;
-  if(info){$('#fMarke').value=info.marke;$('#fMenge').value=info.menge}
+  scanEan=code; $('#fScanNew').hidden=true;
+  if(info){
+    if(!keepFilled||!$('#fName').value) $('#fName').value=info.name||$('#fName').value;
+    if(!keepFilled||!$('#fMarke').value) $('#fMarke').value=info.marke;
+    if(!keepFilled||!$('#fMenge').value) $('#fMenge').value=info.menge;
+  }
   $('#fEanTxt').textContent=`Barcode ${code}`+(info?' – Angaben aus der Open-Food/Beauty-Facts-Datenbank, bitte prüfen.':' – nicht in der Datenbank, bitte Namen eintragen.');
   assInfo=info; $('#fAssQ').value=''; renderAssList();
   $('#fAssBox').hidden=false;
@@ -849,12 +905,17 @@ function renderInfo(){
     <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b></p>
     <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
     <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
+    <label class="hint" style="display:block;margin:16px 0 6px">Neue Produkte</label>
+    ${data.katalog.filter(p=>p.angelegt).sort((a,b)=>b.angelegt.localeCompare(a.angelegt)||b.id.localeCompare(a.id)).slice(0,6).map(p=>`<button class="newp" data-np="${p.id}">${esc(label(p))} <small>· ${esc(p.kategorie)} · ${esc(shopName(p.geschaeft))} · ${p.angelegt.split('-').reverse().join('.')}${p.eans?.length?' · Barcode ✓':''}</small></button>`).join('')}
+    <button class="btn sec" id="iNew" style="margin-top:2px">＋ Produkt anlegen (mit Barcode)</button>
     ${myRole==='admin'?`<div id="family" style="margin-top:16px"></div>`:''}
     <button class="btn sec" id="iStats">▤ Statistik</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
     <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
     <p style="color:var(--mute);font-size:13px;margin-bottom:0">Abgehakte Einkäufe werden eine Stunde nach dem letzten Häkchen automatisch abgeschlossen.</p></div>`;
   $('#iStats').onclick=()=>{view='stats';render()};
+  $('#iNew').onclick=()=>newProduct(false);
+  $('#main').querySelectorAll('[data-np]').forEach(b=>b.onclick=()=>editProduct(b.dataset.np));
   $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=renderSetup;
