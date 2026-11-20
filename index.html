@@ -714,9 +714,6 @@ function renderInfo(){
     <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b><br>${data.katalog.length} Produkte · ${data.liste.filter(l=>!l.erledigt).length} offen auf den Listen · ${data.historie.length} Käufe erfasst</p>
     <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
     <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
-    <label style="display:block;font-size:13px;color:var(--mute);margin:14px 0 0">App teilen</label>
-    <div class="qrbox"><div class="qr" id="qrShare"></div><a href="${APP_URL}">${APP_URL.replace('https://','')}</a></div>
-    <button class="btn sec" id="iShare" style="margin-top:6px">↗︎ Link teilen</button>
     ${myRole==='admin'?`<div id="family" style="margin-top:16px"></div>`:''}
     <button class="btn sec" id="iStats">📊 Kaufhäufigkeit</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
@@ -726,8 +723,6 @@ function renderInfo(){
   $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=renderSetup;
-  qrInto('#qrShare',APP_URL);
-  $('#iShare').onclick=async()=>{try{if(navigator.share)await navigator.share({title:'Einkaufsliste',url:APP_URL});else{await navigator.clipboard.writeText(APP_URL);setStatus('Link kopiert')}}catch{}};
   if(myRole==='admin') renderFamily();
 }
 /* Einladungen liegen nur auf dem Gerät des Administrators (mit Schlüssel), bis die Person sich angemeldet hat */
