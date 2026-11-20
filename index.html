@@ -123,6 +123,9 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .fam{display:flex;align-items:center;gap:8px;background:var(--stepbg);border-radius:10px;padding:8px 10px;margin-bottom:6px}
 .fam span{flex:1;min-width:0}
 .fam button{border:0;border-radius:8px;background:var(--btn2);padding:8px 10px;font-size:13px;font-weight:600}
+.fam .btn{background:var(--ok);color:#fff;font-size:15px}
+.fam .btn.sec{background:var(--btn2);color:var(--fg)}
+.fam button#invAdd{white-space:nowrap}
 </style>
 </head>
 <body>
@@ -711,11 +714,11 @@ function render(){
 }
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
-    <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b><br>${data.katalog.length} Produkte · ${data.liste.filter(l=>!l.erledigt).length} offen auf den Listen · ${data.historie.length} Käufe erfasst</p>
+    <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b></p>
     <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
     <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
     ${myRole==='admin'?`<div id="family" style="margin-top:16px"></div>`:''}
-    <button class="btn sec" id="iStats">📊 Kaufhäufigkeit</button>
+    <button class="btn sec" id="iStats">▤ Statistik</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
     <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
     <p style="color:var(--mute);font-size:13px;margin-bottom:0">Abgehakte Einkäufe werden eine Stunde nach dem letzten Häkchen automatisch abgeschlossen.</p></div>`;
@@ -736,18 +739,18 @@ async function renderFamily(){
   const before=inv.length; inv=inv.filter((x,k)=>!g[hashes[k]]);       // angemeldete fallen raus, Schlüssel wird vergessen
   if(inv.length!==before) localStorage.setItem(INV_KEY,JSON.stringify(inv));
   const reg=Object.entries(g).sort((a,b)=>(a[1].rolle==='admin'?-1:1)-(b[1].rolle==='admin'?-1:1)||a[1].name.localeCompare(b[1].name,'de'));
-  box.innerHTML=`<label class="hint" style="display:block;margin-bottom:6px">👪 Familie</label>
-    ${reg.map(([h,x])=>`<div class="fam"><span>${esc(x.name)}${x.rolle==='admin'?' <small class="hint">· Administrator</small>':''}<br><small class="hint">angemeldet seit ${x.seit.split('-').reverse().join('.')}</small></span>${x.rolle!=='admin'?`<button data-free="${h}">Gerät freigeben</button>`:''}</div>`).join('')}
+  box.innerHTML=`<label class="hint" style="display:block;margin-bottom:6px">Nutzer</label>
+    ${reg.map(([h,x])=>`<div class="fam"><span>${esc(x.name)} <small class="hint">· ${x.rolle==='admin'?'Administrator · ':''}seit ${x.seit.split('-').reverse().join('.')}</small></span>${x.rolle!=='admin'?`<button data-free="${h}">Gerät freigeben</button>`:(h===myHash&&!addingMember?`<button id="invAdd">＋ Nutzer anlegen</button>`:'')}</div>`).join('')}
     ${inv.length?`<label class="hint" style="display:block;margin:12px 0 6px">Noch nicht angemeldet</label>`:''}
     ${inv.map((x,k)=>`<div class="fam"><span>${esc(x.n)}</span><button data-qr="${k}">${showInv===k?'Code ausblenden':'QR-Code zeigen'}</button><button data-rm="${k}" title="Einladung löschen">🗑</button></div>
       ${showInv===k?`<div class="qrbox"><div class="qr" id="qrInv"></div><small class="hint">Direkt vom Bildschirm scannen lassen – nicht als Foto verschicken.</small></div>`:''}`).join('')}
     ${addingMember?`<div class="fam" style="display:block">
-        <label class="hint">Name des Familienmitglieds</label>
+        <label class="hint">Name des neuen Nutzers</label>
         <input id="invName" name="family-member-name" autocomplete="off" data-lpignore="true" data-1p-ignore placeholder="z. B. Johannes" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:2px 0 8px">
         <label class="hint">Schlüssel dieser Person</label>
         <input id="invTok" name="family-member-key" type="text" autocomplete="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="github_pat_…" autocapitalize="off" style="width:100%;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:2px 0 8px;-webkit-text-security:disc">
         <div class="row"><button class="btn sec" id="invX" style="margin:0;padding:10px">Abbrechen</button><button class="btn" id="invGo" style="margin:0;padding:10px">Anlegen</button></div></div>`
-      :`<button class="btn sec" id="invAdd" style="margin-top:6px">＋ Familienmitglied anlegen</button>`}`;
+      :''}`;
   box.querySelectorAll('[data-free]').forEach(b=>b.onclick=()=>{
     const h=b.dataset.free, n=g[h]?.name;
     if(!confirm(`Gerät von ${n} freigeben?\nDer Schlüssel kann danach auf einem neuen Gerät angemeldet werden.`))return;
@@ -778,8 +781,9 @@ function renderStats(){
   const f=freq();
   const rows=data.katalog.map(p=>({p,n:f[p.id]||0,d:lastBought(p.id)})).sort((a,b)=>b.n-a.n);
   const never=rows.filter(r=>!r.n).length;
-  $('#main').innerHTML=`<div class="setup stats"><h3 style="margin-top:0">Kaufhäufigkeit</h3>
-    <p style="color:var(--mute);font-size:14px">${data.historie.length} Käufe erfasst · ${never} von ${rows.length} Katalogartikeln noch nie gekauft</p>
+  $('#main').innerHTML=`<div class="setup stats"><h3 style="margin-top:0">▤ Statistik</h3>
+    <p style="color:var(--mute);font-size:14px">${data.katalog.length} Produkte · ${data.liste.filter(l=>!l.erledigt).length} offen auf den Listen · ${data.historie.length} Käufe erfasst · ${never} Produkte noch nie gekauft</p>
+    <label class="hint" style="display:block;margin:10px 0 4px">Kaufhäufigkeit</label>
     ${rows.filter(r=>r.n).map(r=>`<div><span>${esc(label(r.p))}</span><span>${r.n}× · ${r.d.split('-').reverse().join('.')}</span></div>`).join('')||'<p>Noch keine abgeschlossenen Einkäufe.</p>'}
     <button class="btn sec" id="back">Zurück</button></div>`;
   $('#back').onclick=()=>{view='info';render()};
