@@ -160,7 +160,7 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .newp{display:block;width:100%;text-align:left;border:0;border-radius:8px;background:var(--stepbg);padding:7px 10px;margin-bottom:4px;font-size:14px}
 .newp small{color:var(--mute)}
 .dlghead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
-.dlghead h3{margin:0;flex:1}
+.dlghead h3{margin:0;flex:1;white-space:nowrap}
 .bcbtn{flex:none;border:0;border-radius:10px;background:var(--hdr);color:#fff;width:48px;height:40px;display:grid;place-items:center}
 .crow{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 10px;border-radius:8px;margin-bottom:3px;font-size:15px}
 .crow.tint{background:hsl(var(--h) var(--ts) var(--tl))}
@@ -195,7 +195,8 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 
 <dialog id="dlg">
   <form method="dialog" id="dlgForm">
-    <div class="dlghead"><h3 id="dlgT">Neuer Artikel</h3><button type="button" class="bcbtn" id="fScanNew" title="Barcode scannen" hidden></button></div>
+    <div class="dlghead"><h3 id="dlgT">Neuer Artikel</h3><button type="button" class="bcbtn" id="fFoto" title="Foto aufnehmen – das Produkt wird über Nacht erkannt" hidden>📷</button><button type="button" class="bcbtn" id="fScanNew" title="Barcode scannen" hidden></button></div>
+    <input type="file" id="fFotoIn" accept="image/*" capture="environment" multiple hidden>
     <div id="fAssBox" hidden>
       <small id="fEanTxt"></small>
       <label>Einem vorhandenen Produkt zuordnen – antippen:</label>
@@ -488,10 +489,23 @@ function newProduct(toList=true){
   $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';$('#fMenge').value='';
   $('#fEinh').innerHTML=Object.keys(EINH).map(u=>`<option>${u}</option>`).join('');$('#fEinh').value='Stück';
   editId=null;scanEan=null;$('#dlgT').textContent='Neuer Artikel';$('#fOk').textContent=toList?'Hinzufügen':'Anlegen';$('#fAssBox').hidden=true;$('#fScan').hidden=true;
-  $('#fScanNew').hidden=false;$('#fScanNew').innerHTML=BC_ICON;$('#fToListL').hidden=false;$('#fToList').checked=toList;
+  $('#fScanNew').hidden=false;$('#fScanNew').innerHTML=BC_ICON;$('#fFoto').hidden=false;$('#fToListL').hidden=false;$('#fToList').checked=toList;
   $('#dlg').showModal();
 }
 $('#fCancel').onclick=()=>$('#dlg').close();
+/* Foto statt Eintippen: Foto wird hochgeladen, die abendliche Aufgabe legt das Produkt an */
+$('#fFoto').onclick=()=>$('#fFotoIn').click();
+$('#fFotoIn').onchange=async e=>{
+  const files=[...e.target.files]; e.target.value=''; if(!files.length) return;
+  $('#dlg').close(); let ok=0;
+  for(const f of files){setStatus(`Foto ${ok+1}/${files.length} wird hochgeladen…`);try{await uploadPhoto(f);ok++}catch(err){setStatus('⚠︎ '+err.message);break}}
+  if(ok){
+    setStatus(`${ok} Foto${ok>1?'s':''} hochgeladen – ab morgen im Katalog`);
+    if(!localStorage.getItem('einkauf.fotoHinweis')){localStorage.setItem('einkauf.fotoHinweis','1');
+      alert('Danke! Fotos werden einmal täglich abends ausgewertet.\nDas Produkt ist am Folgetag im Katalog.')}
+  }
+  showPending();
+};
 $('#fScanNew').onclick=async()=>{
   const keep={n:$('#fName').value,m:$('#fMarke').value,k:$('#fKat').value,s:$('#fShop').value,e:$('#fEinh').value,g:$('#fMenge').value,t:$('#fToList').checked};
   $('#dlg').close();
@@ -509,7 +523,7 @@ function editProduct(id){
   editId=id;$('#dlgT').textContent='Artikel bearbeiten';$('#fOk').textContent='Speichern';
   $('#fName').value=p.name;$('#fMarke').value=p.marke||'';$('#fKat').value=p.kategorie;$('#fMenge').value=p.menge||'';
   $('#fEinh').value=unitOf(p);$('#fShop').value=SHOPS().includes(p.geschaeft)?p.geschaeft:'';
-  $('#fScan').hidden=false;$('#fScanNew').hidden=true;$('#fToListL').hidden=true;
+  $('#fScan').hidden=false;$('#fScanNew').hidden=true;$('#fFoto').hidden=true;$('#fToListL').hidden=true;
   $('#fScan').innerHTML=BC_ICON+' '+(p.eans?.length?`Weiteren Barcode zuordnen (${p.eans.length} gespeichert)`:'Barcode diesem Produkt zuordnen');
 }
 $('#fScan').onclick=async()=>{
@@ -899,7 +913,7 @@ async function newFromCode(code){
 async function fillFromCode(code,keepFilled){
   setStatus('Suche Produktdaten…');
   const info=await lookupEan(code);
-  scanEan=code; $('#fScanNew').hidden=true;
+  scanEan=code; $('#fScanNew').hidden=true;$('#fFoto').hidden=true;
   if(info){
     if(!keepFilled||!$('#fName').value) $('#fName').value=info.name||$('#fName').value;
     if(!keepFilled||!$('#fMarke').value) $('#fMarke').value=info.marke;
@@ -1144,9 +1158,7 @@ async function showPending(){
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
     <button class="btn sec" id="iTheme">${{auto:'🌗 Design: Automatisch',light:'☀️ Design: Hell',dark:'🌙 Design: Dunkel'}[localStorage.getItem(THEME_KEY)||'auto']}</button>
-    <button class="btn sec" id="iNew">＋ Produkt anlegen (mit Barcode)</button>
-    <button class="btn sec" id="iFoto">📷 Produkt per Foto anlegen</button>
-    <input type="file" id="iFotoIn" accept="image/*" capture="environment" multiple hidden>
+    <button class="btn sec" id="iNew">＋ Produkt anlegen</button>
     <div class="hint" id="iFotoInfo" style="margin:-4px 0 8px;font-size:13px"></div>
     <button class="btn sec" id="iCat">✎ Produktkatalog bearbeiten</button>
     <button class="btn sec" id="iStats">▤ Statistik</button>
@@ -1159,20 +1171,7 @@ function renderInfo(){
   $('#iTheme').onclick=()=>{const n={auto:'light',light:'dark',dark:'auto'}[localStorage.getItem(THEME_KEY)||'auto'];localStorage.setItem(THEME_KEY,n);applyTheme(n);render()};
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=()=>{view='setup';render()};
-  $('#iFoto').onclick=()=>$('#iFotoIn').click();
-  $('#iFotoIn').onchange=async e=>{
-    const files=[...e.target.files]; if(!files.length) return;
-    let ok=0;
-    for(const f of files){setStatus(`Foto ${ok+1}/${files.length} wird hochgeladen…`);try{await uploadPhoto(f);ok++}catch(err){setStatus('⚠︎ '+err.message);break}}
-    if(ok){
-      setStatus(`${ok} Foto${ok>1?'s':''} hochgeladen – ab morgen im Katalog`);
-      if(!localStorage.getItem('einkauf.fotoHinweis')){localStorage.setItem('einkauf.fotoHinweis','1');
-        alert('Danke! Fotos werden einmal täglich abends ausgewertet.\nDas Produkt ist am Folgetag im Katalog.')}
-    }
-    showPending();
-  };
   showPending();
-
 }
 /* Einladungen liegen nur auf dem Gerät des Administrators (mit Schlüssel), bis die Person sich angemeldet hat */
 /* Einladungen (mit Schlüssel) liegen verschlüsselt in den gemeinsamen Daten – nur mit dem Administrator-Schlüssel lesbar,
