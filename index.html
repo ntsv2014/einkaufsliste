@@ -97,6 +97,10 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 .flash{animation:flash 1.6s ease}
 @keyframes flash{0%,40%{background:#fde68a}}
 #fAssBox{background:var(--stepbg);border-radius:10px;padding:8px 10px;margin-bottom:10px}
+#fAssList{max-height:190px;overflow-y:auto}
+#fAssList button{display:block;width:100%;text-align:left;border:0;border-radius:6px;background:var(--card);padding:5px 7px;margin-bottom:2px;font-size:12px;line-height:1.2}
+#fAssBox,#fAssBox label,#fAssBox small{font-size:12px}
+#fAssList button small{color:var(--mute)}
 .seg{display:flex;gap:8px;margin-bottom:10px}
 .seg button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:12px 6px;font-size:15px;font-weight:600}
 .seg button.on{background:var(--hdr);color:#fff;border-color:var(--hdr)}
@@ -143,8 +147,10 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
     <h3 style="margin-top:0" id="dlgT">Neuer Artikel</h3>
     <div id="fAssBox" hidden>
       <small id="fEanTxt"></small>
-      <label>… oder einem vorhandenen Produkt zuordnen</label>
-      <div class="row"><select id="fAss" style="flex:1;margin:0"></select><button type="button" class="btn" id="fAssBtn" style="width:auto;margin:0;padding:8px 14px">Zuordnen</button></div>
+      <label>Einem vorhandenen Produkt zuordnen – antippen:</label>
+      <input id="fAssQ" placeholder="Produkt suchen…" autocomplete="off" style="font-size:14px;padding:7px 9px;margin:4px 0 6px">
+      <div id="fAssList"></div>
+      <label style="display:block;margin-top:6px">… oder unten als neues Produkt anlegen</label>
     </div>
     <label>Name</label><input id="fName" required>
     <label>Marke (optional)</label><input id="fMarke">
@@ -366,7 +372,17 @@ $('#fScan').onclick=async()=>{
   const code=await scanBarcode(); if(!code) return;
   addEan(id,code);
 };
-$('#fAssBtn').onclick=async()=>{const id=$('#fAss').value,code=scanEan;if(!id||!code)return;$('#dlg').close();await addEan(id,code);while(busy)await sleep(100);await send(id);setStatus('Zugeordnet und auf die Liste gesetzt')};
+async function assignTo(id){const code=scanEan;if(!id||!code)return;$('#dlg').close();await addEan(id,code);while(busy)await sleep(100);await send(id);setStatus('Zugeordnet und auf die Liste gesetzt')}
+let assInfo=null;
+function renderAssList(){
+  const q=$('#fAssQ').value.trim().toLowerCase();
+  let list;
+  if(q){const ws=q.split(/\s+/);list=data.katalog.filter(p=>{const t=(label(p)+' '+p.kategorie).toLowerCase();return ws.every(w=>t.includes(w))}).slice(0,30).map(p=>({p,s:0}))}
+  else list=similar(assInfo).filter(x=>x.s>0).slice(0,8);
+  $('#fAssList').innerHTML=list.map(({p,s})=>`<button type="button" data-ass="${p.id}">${s?'★ ':''}${esc(label(p))} <small>· ${esc(p.kategorie)}</small></button>`).join('')||`<small class="hint">${q?'Nichts gefunden.':'Keine passenden Vorschläge – oben suchen.'}</small>`;
+  $('#fAssList').querySelectorAll('[data-ass]').forEach(b=>b.onclick=()=>assignTo(b.dataset.ass));
+}
+$('#fAssQ').oninput=renderAssList;
 $('#dlgForm').onsubmit=e=>{
   e.preventDefault();
   const name=$('#fName').value.trim(); if(!name) return;
@@ -589,7 +605,8 @@ async function lookupEan(code){
   return null;
 }
 function similar(info){
-  const words=(info?(info.name+' '+info.marke):'').toLowerCase().split(/[^a-zäöüß0-9]+/).filter(w=>w.length>2);
+  const stop=new Set(['mit','und','bio','für','der','die','das','von','ohne']);
+  const words=(info?(info.name+' '+info.marke):'').toLowerCase().split(/[^a-zäöüß0-9]+/).filter(w=>w.length>2&&!stop.has(w));
   const sc=p=>{const t=label(p).toLowerCase();return words.reduce((a,w)=>a+(t.includes(w)?1:0),0)};
   return [...data.katalog].map(p=>({p,s:sc(p)})).sort((a,b)=>b.s-a.s||a.p.name.localeCompare(b.p.name,'de'));
 }
@@ -636,9 +653,8 @@ async function newFromCode(code){
   query=info?.name||''; newProduct(); query='';
   scanEan=code;
   if(info){$('#fMarke').value=info.marke;$('#fMenge').value=info.menge}
-  $('#fEanTxt').textContent=`Barcode ${code}`+(info?' – Angaben aus der Open-Food-Facts-Datenbank, bitte prüfen.':' – nicht in der Datenbank, bitte Namen eintragen.');
-  const list=similar(info);
-  $('#fAss').innerHTML='<option value="">– Produkt wählen –</option>'+list.map(({p,s})=>`<option value="${p.id}">${s?'★ ':''}${esc(label(p))}</option>`).join('');
+  $('#fEanTxt').textContent=`Barcode ${code}`+(info?' – Angaben aus der Open-Food/Beauty-Facts-Datenbank, bitte prüfen.':' – nicht in der Datenbank, bitte Namen eintragen.');
+  assInfo=info; $('#fAssQ').value=''; renderAssList();
   $('#fAssBox').hidden=false;
 }
 
