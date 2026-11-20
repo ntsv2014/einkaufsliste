@@ -89,6 +89,10 @@ dialog.scan{padding:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dv
 dialog.scan video{width:100%;height:100%;object-fit:cover}
 .scanFrame{position:fixed;left:8%;right:8%;top:35%;height:22%;border:3px solid #f7c600;border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45);pointer-events:none}
 .scanBar{position:fixed;left:0;right:0;bottom:0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));text-align:center;background:linear-gradient(transparent,rgba(0,0,0,.8))}
+.torch{position:fixed;top:calc(14px + env(safe-area-inset-top));right:14px;width:52px;height:52px;border-radius:50%;border:0;background:rgba(0,0,0,.55);font-size:24px}
+.torch.on{background:#f7c600}
+#scanLog{font-size:14px;margin-bottom:6px;text-align:left;max-width:420px;margin-inline:auto}
+#scanLog div{padding:3px 8px;border-radius:6px;background:rgba(255,255,255,.12);margin-top:3px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .scanBar button{margin-top:10px;border:0;border-radius:10px;padding:12px 28px;font-size:16px;font-weight:600}
 .flash{animation:flash 1.6s ease}
 @keyframes flash{0%,40%{background:#fde68a}}
@@ -161,7 +165,8 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 <dialog id="dScan" class="scan">
   <video id="scanV" playsinline muted></video>
   <div class="scanFrame"></div>
-  <div class="scanBar"><div id="scanTxt">Barcode in den Rahmen halten</div><button id="scanX">Abbrechen</button></div>
+  <button id="scanTorch" class="torch" hidden title="Taschenlampe">🔦</button>
+  <div class="scanBar"><div id="scanLog"></div><div id="scanTxt">Barcode in den Rahmen halten</div><button id="scanX">Abbrechen</button></div>
 </dialog>
 <dialog id="dShop">
   <h3 style="margin-top:0">Wo gibt es das?</h3>
@@ -361,7 +366,7 @@ $('#fScan').onclick=async()=>{
   const code=await scanBarcode(); if(!code) return;
   addEan(id,code);
 };
-$('#fAssBtn').onclick=()=>{const id=$('#fAss').value,code=scanEan;if(!id||!code)return;$('#dlg').close();addEan(id,code).then(()=>showProduct(id))};
+$('#fAssBtn').onclick=async()=>{const id=$('#fAss').value,code=scanEan;if(!id||!code)return;$('#dlg').close();await addEan(id,code);while(busy)await sleep(100);await send(id);setStatus('Zugeordnet und auf die Liste gesetzt')};
 $('#dlgForm').onsubmit=e=>{
   e.preventDefault();
   const name=$('#fName').value.trim(); if(!name) return;
@@ -502,21 +507,37 @@ function renderGroup(){
 let scanEan=null;
 const BC_ICON='<svg viewBox="0 0 28 20" width="28" height="20" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="2" height="18"/><rect x="5" y="1" width="1" height="18"/><rect x="8" y="1" width="3" height="18"/><rect x="13" y="1" width="1" height="18"/><rect x="16" y="1" width="2" height="18"/><rect x="20" y="1" width="1" height="18"/><rect x="23" y="1" width="1.5" height="18"/><rect x="26" y="1" width="1" height="18"/></svg>';
 const loadScript=src=>new Promise((ok,no)=>{if(window.ZXing)return ok();const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('Scanner konnte nicht geladen werden'));document.head.appendChild(s)});
-function scanBarcode(){
-  const dl=$('#dScan'), v=$('#scanV'), txt=$('#scanTxt');
-  let stream=null, stop=false, zx=null, done=false;
+/* Scanner: einzeln (liefert einen Code) oder fortlaufend (onCode für jeden Code, bis „Fertig“) */
+function scanBarcode(opt={}){
+  const dl=$('#dScan'), v=$('#scanV'), txt=$('#scanTxt'), torch=$('#scanTorch'), btn=$('#scanX');
+  let stream=null, stop=false, zx=null, done=false, last='', lastT=0, torchOn=false;
+  $('#scanLog').innerHTML=''; torch.hidden=true; torch.classList.remove('on');
+  btn.textContent=opt.multi?'Fertig':'Abbrechen';
   return new Promise(res=>{
-    const finish=code=>{
+    const close=code=>{
       if(done) return; done=true; stop=true;
       try{zx&&zx.reset()}catch{}
       if(stream) stream.getTracks().forEach(t=>t.stop());
       if(v.srcObject) v.srcObject.getTracks?.().forEach(t=>t.stop());
       v.srcObject=null; if(dl.open) dl.close();
-      if(code) navigator.vibrate?.(80);
       res(code);
     };
-    $('#scanX').onclick=()=>finish(null);
-    dl.oncancel=e=>{e.preventDefault();finish(null)};
+    const hit=code=>{
+      if(stop) return;
+      /* derselbe Code zählt erst wieder, wenn er kurz aus dem Bild war */
+      const now=Date.now(); if(code===last&&now-lastT<1500){lastT=now;return} last=code; lastT=now;
+      navigator.vibrate?.(80);
+      if(!opt.multi) return close(code);
+      opt.onCode(code);
+    };
+    btn.onclick=()=>close(null);
+    dl.oncancel=e=>{e.preventDefault();close(null)};
+    const setupTorch=()=>{
+      const tr=v.srcObject?.getVideoTracks?.()[0];
+      if(!tr||!tr.getCapabilities||!tr.getCapabilities().torch) return;
+      torch.hidden=false;
+      torch.onclick=async()=>{torchOn=!torchOn;try{await tr.applyConstraints({advanced:[{torch:torchOn}]});torch.classList.toggle('on',torchOn)}catch{torchOn=!torchOn}};
+    };
     txt.textContent='Kamera wird gestartet…'; dl.showModal();
     (async()=>{
       try{
@@ -525,18 +546,18 @@ function scanBarcode(){
         if('BarcodeDetector' in window){
           try{const fm=await BarcodeDetector.getSupportedFormats();const want=['ean_13','ean_8','upc_a','upc_e','code_128'].filter(f=>fm.includes(f));if(want.length)det=new BarcodeDetector({formats:want})}catch{}
         }
+        const ready=()=>{txt.textContent=opt.multi?'Artikel nacheinander in den Rahmen halten':'Barcode in den Rahmen halten';setupTorch()};
         if(det){
-          stream=await navigator.mediaDevices.getUserMedia(cam); v.srcObject=stream; await v.play();
-          txt.textContent='Barcode in den Rahmen halten';
-          const loop=async()=>{if(stop)return;try{const r=await det.detect(v);if(r.length)return finish(r[0].rawValue)}catch{}setTimeout(loop,120)};
+          stream=await navigator.mediaDevices.getUserMedia(cam); v.srcObject=stream; await v.play(); ready();
+          const loop=async()=>{if(stop)return;try{const r=await det.detect(v);if(r.length)hit(r[0].rawValue)}catch{}setTimeout(loop,150)};
           loop();
         }else{
           await loadScript('zxing.min.js'); if(stop) return;
           const hints=new Map();
           hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,ZXing.BarcodeFormat.CODE_128]);
           zx=new ZXing.BrowserMultiFormatReader(hints);
-          txt.textContent='Barcode in den Rahmen halten';
-          await zx.decodeFromConstraints(cam,v,r=>{if(r&&!stop)finish(r.getText())});
+          await zx.decodeFromConstraints(cam,v,r=>{if(r)hit(r.getText())});
+          ready();
         }
       }catch(e){txt.textContent=(e.name==='NotAllowedError'?'Kamera-Zugriff wurde nicht erlaubt. Bitte in den Browser-Einstellungen für diese Seite erlauben.':'Kamera nicht verfügbar: '+e.message)}
     })();
@@ -572,13 +593,46 @@ function similar(info){
   const sc=p=>{const t=label(p).toLowerCase();return words.reduce((a,w)=>a+(t.includes(w)?1:0),0)};
   return [...data.katalog].map(p=>({p,s:sc(p)})).sort((a,b)=>b.s-a.s||a.p.name.localeCompare(b.p.name,'de'));
 }
+/* Fortlaufend scannen: bekannte Artikel sofort auf ihre Liste, unbekannte danach nacheinander anlegen/zuordnen */
+const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+const waitClose=dl=>new Promise(r=>dl.addEventListener('close',r,{once:true}));
 async function onScan(){
-  const code=await scanBarcode(); if(!code) return;
-  const hit=byEan(code);
-  if(hit){setStatus('Gefunden: '+label(hit));return showProduct(hit.id)}
+  const queue=[], later=[]; let draining=false, n=0;
+  const log=t=>{const el=$('#scanLog');el.insertAdjacentHTML('afterbegin',`<div>${t}</div>`);while(el.children.length>4)el.lastChild.remove();$('#scanX').textContent=`Fertig (${n})`};
+  const drain=async()=>{
+    if(draining) return; draining=true;
+    while(queue.length){
+      while(busy) await sleep(100);
+      const id=queue.shift(), p=prod(id), st=stepOf(p);
+      await change('+ '+label(p)+' (Scan)',d=>{
+        const e=d.liste.find(l=>l.id===id&&!l.erledigt);
+        if(e) e.anzahl=Math.round(((e.anzahl||0)+st)*100)/100; else d.liste.push({id,anzahl:suggest(id),von:cfg.name||'',am:today(),ts:Date.now()});
+      });
+    }
+    draining=false;
+  };
+  await scanBarcode({multi:true,onCode:code=>{
+    const p=byEan(code);
+    if(p&&SHOPS().includes(p.geschaeft)){
+      n++; const e=openEntry(p.id); queue.push(p.id); drain();
+      log(`✓ ${esc(label(p))} → ${esc(shopName(p.geschaeft))}${e?' (+1)':''}`);
+    }else if(!later.includes(code)){
+      later.push(code); n++;
+      log(p?`? ${esc(label(p))} – Geschäft danach wählen`:`? Barcode ${code} – danach anlegen`);
+    }
+  }});
+  while(draining) await sleep(100);
+  for(const code of later){
+    const p=byEan(code);
+    if(p){ await send(p.id); continue }
+    await newFromCode(code);
+    await waitClose($('#dlg'));
+    while(busy) await sleep(100);
+  }
+}
+async function newFromCode(code){
   setStatus('Unbekannter Barcode – suche Produktdaten…');
   const info=await lookupEan(code);
-  setStatus(info?'Produktdaten gefunden':'Keine Produktdaten gefunden');
   query=info?.name||''; newProduct(); query='';
   scanEan=code;
   if(info){$('#fMarke').value=info.marke;$('#fMenge').value=info.menge}
