@@ -534,7 +534,7 @@ function guessUnit(p){
 const unitOf=p=>p?(EINH[p.einheit]?p.einheit:guessUnit(p)):'Stück';
 const stepOf=p=>EINH[unitOf(p)][1];
 const fmtN=n=>String(Math.round(n*100)/100).replace('.',',');
-const SHORT={'Packung':'Pck.'};
+const SHORT={'Packung':'Pck.','Flasche':'Fl.'};
 const unitTxt=(u,n)=>SHORT[u]||(n===1?u:EINH[u][0]);
 const fmtQ=(p,n)=>{const u=unitOf(p);return fmtN(n)+' '+unitTxt(u,n)};
 /* Vorschlag: Menge des letzten Einkaufs, sonst 1 Schritt */
