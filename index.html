@@ -44,7 +44,7 @@ h2{font-size:13px;text-transform:uppercase;letter-spacing:.05em;color:var(--mute
 .setup{background:var(--card);border-radius:12px;padding:16px}
 .setup label{display:block;font-size:13px;color:var(--mute);margin:12px 0 4px}
 .setup input{width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px}
-.err{color:#b91c1c;margin-top:10px}
+.err{color:#b91c1c;margin-top:10px;white-space:pre-wrap;font-size:13px}
 dialog{border:0;border-radius:14px;padding:16px;width:min(92vw,420px)}
 dialog input,dialog select{width:100%;font-size:16px;padding:10px;margin:4px 0 10px;border:1px solid var(--line);border-radius:8px}
 dialog label{font-size:13px;color:var(--mute)}
@@ -88,10 +88,29 @@ const setStatus=t=>$('#status').textContent=t;
 const b64dec=s=>new TextDecoder().decode(Uint8Array.from(atob(s.replace(/\n/g,'')),c=>c.charCodeAt(0)));
 const b64enc=s=>{const b=new TextEncoder().encode(s);let r='';for(let i=0;i<b.length;i+=0x8000)r+=String.fromCharCode(...b.subarray(i,i+0x8000));return btoa(r)};
 const api=()=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${cfg.path||'liste.json'}`;
-const hdr=()=>({Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json','X-GitHub-Api-Version':'2022-11-28'});
+const hdr=()=>({Authorization:'Bearer '+cfg.token,Accept:'application/vnd.github+json'});
+/* Eingaben bereinigen: Leerzeichen, Zeilenumbrüche, unsichtbare Zeichen, kopierte URLs */
+const clean=v=>String(v||'').replace(/[^\x21-\x7e]/g,'');
+const cleanName=v=>clean(v).replace(/^https?:\/\/(www\.)?github\.com\//i,'').replace(/\.github\.io.*$/i,'').replace(/^\/+|\/+$/g,'');
+/* Schrittweise Fehlersuche, falls die Verbindung scheitert */
+async function diagnose(){
+  const out=[];
+  const t=async(label,url,auth)=>{
+    try{const r=await fetch(url,auth?{headers:hdr()}:{});out.push(`${label}: ${r.status}${r.ok?' ✓':''}`);return r}
+    catch(e){out.push(`${label}: ${e.name} – ${e.message}`);return null}
+  };
+  out.push(`Benutzer „${cfg.owner}“, Repo „${cfg.repo}“, Datei „${cfg.path}“`);
+  out.push(`Schlüssel: ${cfg.token.length} Zeichen, beginnt mit „${cfg.token.slice(0,11)}“`);
+  await t('1 GitHub erreichbar','https://api.github.com/rate_limit',false);
+  const u=await t('2 Schlüssel gültig','https://api.github.com/user',true);
+  if(u&&u.ok){try{out.push('   angemeldet als '+(await u.json()).login)}catch{}}
+  await t('3 Repo sichtbar',`https://api.github.com/repos/${cfg.owner}/${cfg.repo}`,true);
+  await t('4 Datei lesbar',api(),true);
+  return out.join('\n');
+}
 
 async function load(){
-  const r=await fetch(api()+'?t='+Date.now(),{headers:hdr(),cache:'no-store'});
+  const r=await fetch(api()+'?t='+Date.now(),{headers:hdr()});
   if(!r.ok) throw new Error(r.status===401?'Token ungültig':r.status===404?'Repo oder Datei nicht gefunden':'Fehler '+r.status);
   const j=await r.json(); sha=j.sha; data=JSON.parse(b64dec(j.content));
   data.liste??=[]; data.historie??=[];
@@ -248,9 +267,10 @@ function renderSetup(){
     ${cfg?'<button class="btn sec" id="sOut">Schlüssel von diesem Gerät entfernen</button>':''}
     <div class="err" id="sErr"></div></div>`;
   $('#sGo').onclick=async()=>{
-    cfg={name:$('#sName').value.trim(),owner:$('#sOwner').value.trim(),repo:$('#sRepo').value.trim(),path:$('#sPath').value.trim()||'liste.json',token:$('#sToken').value.trim()};
+    cfg={name:$('#sName').value.trim(),owner:cleanName($('#sOwner').value),repo:cleanName($('#sRepo').value),path:clean($('#sPath').value).replace(/^\/+/,'')||'liste.json',token:clean($('#sToken').value)};
+    $('#sErr').textContent='Verbinde…';
     try{await load();localStorage.setItem(LS,JSON.stringify(cfg));shop=null;render();setStatus('Verbunden')}
-    catch(e){$('#sErr').textContent=e.message;cfg=null}
+    catch(e){const d=await diagnose();$('#sErr').textContent=e.message+'\n\n'+d;cfg=null}
   };
   $('#sOut')&&($('#sOut').onclick=()=>{localStorage.removeItem(LS);cfg=null;data=null;renderSetup()});
 }
