@@ -343,7 +343,7 @@ async function work(){
 }
 /* Aktualisieren beim Öffnen/Zurückkehren und beim Wechseln der Ansicht */
 /* Produkte, die 9 Monate lang weder gekauft noch auf eine Liste gesetzt noch neu angelegt wurden, aus dem Katalog entfernen.
-   Ausgangsdatum für den ursprünglichen Katalog: 20.11.2026. Läuft höchstens einmal täglich pro Gerät. */
+   Ausgangsdatum für den ursprünglichen Katalog: 20.11.2026. Läuft höchstens einmal im Monat pro Gerät. */
 const PRUNE_KEY='einkauf.aufgeraeumt', KATALOG_START='2026-11-20';
 function lastActivity(d,id){
   let t=d.katalog.find(p=>p.id===id)?.angelegt||KATALOG_START;
@@ -352,11 +352,11 @@ function lastActivity(d,id){
   return t;
 }
 async function pruneCatalog(){
-  if(!data||localStorage.getItem(PRUNE_KEY)===today()) return;
+  if(!data||localStorage.getItem(PRUNE_KEY)===today().slice(0,7)) return;
   const cut=new Date(); cut.setMonth(cut.getMonth()-9); const c=cut.toISOString().slice(0,10);
   const old=d=>d.katalog.filter(p=>!d.liste.some(l=>l.id===p.id)&&lastActivity(d,p.id)<c).map(p=>p.id);
   const ids=old(data);
-  localStorage.setItem(PRUNE_KEY,today());
+  localStorage.setItem(PRUNE_KEY,today().slice(0,7));
   if(!ids.length) return;
   await change(`${ids.length} Produkte nach 9 Monaten ohne Kauf entfernt`,d=>{const del=new Set(old(d));d.katalog=d.katalog.filter(p=>!del.has(p.id));for(const r of Object.values(d.reihenfolge||{}))for(const id of del)delete r[id]});
   setStatus(`${ids.length} lange nicht gekaufte Produkte aus dem Katalog entfernt`);
