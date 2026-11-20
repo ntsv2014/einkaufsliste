@@ -288,7 +288,7 @@ async function load(){
   const r=await fetch(api()+'?t='+Date.now(),{headers:hdr()});
   if(!r.ok) throw new Error(r.status===401?'Token ungültig':r.status===404?'Repo oder Datei nicht gefunden':'Fehler '+r.status);
   const j=await r.json(); sha=j.sha; data=JSON.parse(b64dec(j.content));
-  data.liste??=[]; data.historie??=[];
+  data.liste??=[]; data.historie??=[]; mergeDupes(data);
   /* fehlende Geschäfte ergänzen, feste Reihenfolge */
   for(const [id,name] of [['edeka','Edeka'],['budni','Budni'],['tibarg','Tibarg']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
   /* weitere Geschäfte nur einmal anlegen – danach entscheidet die Familie über + und Papierkorb */
@@ -401,10 +401,26 @@ function freq(){const f={};for(const h of data.historie)f[h.id]=(f[h.id]||0)+1;r
 function lastBought(id){let d='';for(const h of data.historie)if(h.id===id&&h.datum>d)d=h.datum;return d}
 function shopItems(s){return data.liste.filter(l=>{const p=prod(l.id);return p&&p.geschaeft===s})}
 
+/* Pro Produkt gibt es höchstens einen Listeneintrag. Ist er schon abgehakt und wird erneut etwas gewünscht,
+   wird er wieder geöffnet (Menge = neue Gesamtmenge). Ältere Doppeleinträge werden beim Laden zusammengeführt. */
+function putOnList(d,id,f){
+  const e=d.liste.find(l=>l.id===id);
+  if(e){f(e);if(e.erledigt){e.erledigt=false;delete e.um}}
+  else{const n={id,anzahl:0,von:cfg.name||'',am:today(),ts:Date.now()};f(n);d.liste.push(n)}
+}
+function mergeDupes(d){
+  const by={};
+  d.liste=d.liste.filter(l=>{
+    const k=by[l.id]; if(!k){by[l.id]=l;return true}
+    const neu=(l.ts||0)>=(k.ts||0)?l:k;           /* die zuletzt gesetzte Menge gilt */
+    k.anzahl=neu.anzahl; if(!l.erledigt||!k.erledigt){k.erledigt=false;delete k.um}
+    if(neu===l){k.von=l.von;k.am=l.am;k.ts=l.ts}
+    return false;
+  });
+}
 function addItem(id){
   change('+ '+label(prod(id)),d=>{
-    const e=d.liste.find(l=>l.id===id&&!l.erledigt);
-    if(e) e.anzahl=(e.anzahl||1)+stepOf(prod(id)); else d.liste.push({id,anzahl:suggest(id),von:cfg.name||'',am:today(),ts:Date.now()});
+    putOnList(d,id,e=>{e.anzahl=e.anzahl?(e.erledigt?e.anzahl:e.anzahl+stepOf(prod(id))):suggest(id)});
   });
   query='';
 }
@@ -418,7 +434,8 @@ function defRank(d,s,p){
 const rankOf=(d,s,p)=>d.reihenfolge?.[s]?.[p.id]??defRank(d,s,p);
 function toggle(id){
   const t=Date.now();
-  change('✓ '+label(prod(id)),d=>{const e=d.liste.find(l=>l.id===id);if(e){e.erledigt=!e.erledigt;if(e.erledigt)e.um=t;else delete e.um}});
+  const v=!data.liste.find(l=>l.id===id)?.erledigt;
+  change((v?'✓ ':'↺ ')+label(prod(id)),d=>{for(const e of d.liste)if(e.id===id){e.erledigt=v;if(v)e.um=t;else delete e.um}});
 }
 function remove(id){change('− '+label(prod(id)),d=>{d.liste=d.liste.filter(l=>l.id!==id)})}
 function finish(s=shop,auto=false){
@@ -512,7 +529,7 @@ $('#dlgForm').onsubmit=e=>{
     await change('Neu: '+label(p),d=>{
       if(scanEan) for(const x of d.katalog) if(x.eans) x.eans=x.eans.filter(c=>c!==scanEan);
       if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);
-      if(toList) d.liste.push({id:p.id,anzahl:stepOf(p),von:cfg.name||'',am:today(),ts:Date.now()});
+      if(toList) putOnList(d,p.id,e=>{e.anzahl=stepOf(p)});
     });
     setStatus(toList?`${p.name} angelegt und auf die Liste gesetzt`:`${p.name} angelegt`);
     if(view==='info') render();
@@ -556,22 +573,20 @@ const fmtN=n=>String(Math.round(n*100)/100).replace('.',',');
 const SHORT={'Packung':'Pck.','Flasche':'Fl.'};
 const unitTxt=(u,n)=>SHORT[u]||(n===1?u:EINH[u][0]);
 const fmtQ=(p,n)=>{const u=unitOf(p);return fmtN(n)+' '+unitTxt(u,n)};
-/* Vorschlag: Menge des letzten Einkaufs, sonst 1 Schritt */
 function lastQty(id){let b=null;for(const h of data.historie)if(h.id===id&&(!b||h.datum>=b.datum))b=h;return b?.anzahl||null}
-const suggest=id=>lastQty(id)??stepOf(prod(id));
+const suggest=id=>stepOf(prod(id));  /* Vorgabe: 1 Schritt; steht das Produkt schon auf der Liste, gilt deren Menge */
 function groups(){
   const g=data.geschaefte.find(x=>x.id==='edeka')?.gaenge||[];
   const rest=[...new Set(data.katalog.map(p=>p.kategorie))].filter(k=>!g.includes(k)).sort((a,b)=>a.localeCompare(b,'de'));
   return [...g,...rest];
 }
-const openEntry=id=>data.liste.find(l=>l.id===id&&!l.erledigt);
+const openEntry=id=>data.liste.find(l=>l.id===id);  /* auch abgehakte, noch nicht abgeschlossene */
 /* Menge auf der Liste setzen (0 = entfernen) */
 function setOnList(id,n){
   const p=prod(id);
   return change(`${n?'= '+n+'×':'−'} ${label(p)}`,d=>{
-    const e=d.liste.find(l=>l.id===id&&!l.erledigt);
-    if(!n){d.liste=d.liste.filter(l=>l!==e);return}
-    if(e) e.anzahl=n; else d.liste.push({id,anzahl:n,von:cfg.name||'',am:today(),ts:Date.now()});
+    if(!n){d.liste=d.liste.filter(l=>l.id!==id);return}
+    putOnList(d,id,e=>{e.anzahl=n});
   });
 }
 function askShop(p){
@@ -585,7 +600,7 @@ function askShop(p){
 }
 async function send(id){
   const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||suggest(id)), e0=openEntry(id);
-  if(e0&&n===e0.anzahl){setStatus('Steht schon auf der Liste');return}
+  if(e0&&!e0.erledigt&&n===e0.anzahl){setStatus('Steht schon auf der Liste');return}
   if(!SHOPS().includes(p.geschaeft)){
     const s=await askShop(p); if(!s) return;
     await change(`${label(p)} → ${s}`,d=>{const x=d.katalog.find(x=>x.id===id);if(x){x.geschaeft=s;delete x.auchBei}});
@@ -819,8 +834,7 @@ async function onScan(){
     while(busy) await sleep(100);
     const id=it.p.id, q=it.qty;
     await change('+ '+label(it.p)+' (Scan)',d=>{
-      const e=d.liste.find(l=>l.id===id&&!l.erledigt);
-      if(e) e.anzahl=Math.round(((e.anzahl||0)+q)*100)/100; else d.liste.push({id,anzahl:q,von:cfg.name||'',am:today(),ts:Date.now()});
+      putOnList(d,id,e=>{e.anzahl=e.erledigt?q:Math.round(((e.anzahl||0)+q)*100)/100});
     });
   }
   for(const it of items){
