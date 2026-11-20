@@ -134,6 +134,13 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .fam .btn{background:var(--ok);color:#fff;font-size:15px}
 .fam .btn.sec{background:var(--btn2);color:var(--fg)}
 .fam button#invAdd{white-space:nowrap}
+.rv{display:flex;align-items:center;gap:8px;padding:7px 8px;border-radius:8px;background:var(--stepbg);margin-bottom:4px;font-size:14px}
+.rv .t{flex:1;min-width:0}
+.rv small{color:var(--mute);font-size:12px}
+.rv.warn{background:#fef3c7;color:#111}.rv.warn small{color:#92400e}
+.rv.unk{opacity:.8}
+.rv .step button{width:32px;height:32px}
+.item .qty{flex:none;margin:0 2px 0 6px;font-size:14px;text-align:right;white-space:nowrap}
 </style>
 </head>
 <body>
@@ -173,6 +180,12 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
   <div class="scanFrame"></div>
   <button id="scanTorch" class="torch" hidden title="Taschenlampe">🔦</button>
   <div class="scanBar"><div id="scanLog"></div><div id="scanTxt">Barcode in den Rahmen halten</div><button id="scanX">Abbrechen</button></div>
+</dialog>
+<dialog id="dReview">
+  <h3 style="margin-top:0">Gescannte Artikel</h3>
+  <p class="hint" id="revHint" style="margin-top:0"></p>
+  <div id="revList"></div>
+  <div class="row" style="margin-top:4px"><button class="btn sec" id="revX">Verwerfen</button><button class="btn" id="revOk">Übernehmen</button></div>
 </dialog>
 <dialog id="dShop">
   <h3 style="margin-top:0">Wo gibt es das?</h3>
@@ -614,38 +627,61 @@ function similar(info){
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const waitClose=dl=>new Promise(r=>dl.addEventListener('close',r,{once:true}));
 async function onScan(){
-  const queue=[], later=[]; let draining=false, n=0;
+  /* während des Scannens nur sammeln; Duplikate werden zusammengefasst und vor dem Übernehmen geprüft */
+  const counts=new Map(); let n=0;
   const log=t=>{const el=$('#scanLog');el.insertAdjacentHTML('afterbegin',`<div>${t}</div>`);while(el.children.length>4)el.lastChild.remove();$('#scanX').textContent=`Fertig (${n})`};
-  const drain=async()=>{
-    if(draining) return; draining=true;
-    while(queue.length){
-      while(busy) await sleep(100);
-      const id=queue.shift(), p=prod(id), st=stepOf(p);
-      await change('+ '+label(p)+' (Scan)',d=>{
-        const e=d.liste.find(l=>l.id===id&&!l.erledigt);
-        if(e) e.anzahl=Math.round(((e.anzahl||0)+st)*100)/100; else d.liste.push({id,anzahl:suggest(id),von:cfg.name||'',am:today(),ts:Date.now()});
-      });
-    }
-    draining=false;
-  };
   await scanBarcode({multi:true,onCode:code=>{
+    n++; const k=(counts.get(code)||0)+1; counts.set(code,k);
     const p=byEan(code);
-    if(p&&SHOPS().includes(p.geschaeft)){
-      n++; const e=openEntry(p.id); queue.push(p.id); drain();
-      log(`✓ ${esc(label(p))} → ${esc(shopName(p.geschaeft))}${e?' (+1)':''}`);
-    }else if(!later.includes(code)){
-      later.push(code); n++;
-      log(p?`? ${esc(label(p))} – Geschäft danach wählen`:`? Barcode ${code} – danach anlegen`);
-    }
+    log(`${p?'✓ '+esc(label(p)):'? Barcode '+code}${k>1?` <b>(${k}× gescannt)</b>`:''}`);
   }});
-  while(draining) await sleep(100);
-  for(const code of later){
-    const p=byEan(code);
-    if(p){ await send(p.id); continue }
-    await newFromCode(code);
+  if(!counts.size) return;
+  const items=[...counts].map(([code,k])=>({code,k,p:byEan(code)}));
+  const ok=await reviewScan(items); if(!ok) return;
+  for(const it of items){
+    if(!it.p||!it.qty||!SHOPS().includes(it.p.geschaeft)) continue;
+    while(busy) await sleep(100);
+    const id=it.p.id, q=it.qty;
+    await change('+ '+label(it.p)+' (Scan)',d=>{
+      const e=d.liste.find(l=>l.id===id&&!l.erledigt);
+      if(e) e.anzahl=Math.round(((e.anzahl||0)+q)*100)/100; else d.liste.push({id,anzahl:q,von:cfg.name||'',am:today(),ts:Date.now()});
+    });
+  }
+  for(const it of items){
+    if(it.p&&!SHOPS().includes(it.p.geschaeft)&&it.qty){cnt[it.p.id]=it.qty;await send(it.p.id);continue}
+    if(it.p) continue;
+    await newFromCode(it.code);
     await waitClose($('#dlg'));
     while(busy) await sleep(100);
   }
+  setStatus('Gescannte Artikel übernommen');
+}
+/* Prüfliste nach dem Scannen: Mehrfach-Scans und schon vorhandene Einträge hervorheben, Menge anpassbar */
+function reviewScan(items){
+  return new Promise(res=>{
+    const dl=$('#dReview');
+    for(const it of items) if(it.p) it.qty=it.k*stepOf(it.p);
+    const draw=()=>{
+      $('#revList').innerHTML=items.map((it,i)=>{
+        if(!it.p) return `<div class="rv unk"><span class="t">Unbekannter Barcode ${it.code}${it.k>1?` · ${it.k}× gescannt`:''}<br><small>wird danach angelegt bzw. zugeordnet</small></span></div>`;
+        const e=openEntry(it.p.id), notes=[];
+        if(it.k>1) notes.push(`<b>${it.k}× gescannt</b>`);
+        if(e) notes.push(`steht schon auf der Liste (${fmtQ(it.p,e.anzahl)})`);
+        if(!SHOPS().includes(it.p.geschaeft)) notes.push('Geschäft wird danach abgefragt');
+        return `<div class="rv ${it.k>1||e?'warn':''}"><span class="t">${esc(label(it.p))}${notes.length?`<br><small>${notes.join(' · ')}</small>`:''}</span>
+          <div class="step"><button data-rm="${i}">−</button><span>${fmtN(it.qty)}<small>${unitOf(it.p)==='Stück'?'':(it.qty===1?unitOf(it.p):EINH[unitOf(it.p)][0])}</small></span><button data-rp="${i}">+</button></div></div>`;
+      }).join('');
+      dl.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.rm];it.qty=Math.max(0,Math.round((it.qty-stepOf(it.p))*100)/100);draw()});
+      dl.querySelectorAll('[data-rp]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.rp];it.qty=Math.round((it.qty+stepOf(it.p))*100)/100;draw()});
+      const dup=items.filter(it=>it.k>1||(it.p&&openEntry(it.p.id))).length;
+      $('#revHint').textContent=dup?`${dup} Artikel mehrfach gescannt oder schon auf der Liste – bitte Mengen prüfen (0 = nicht übernehmen).`:'Keine Duplikate gefunden.';
+    };
+    draw();
+    $('#revOk').onclick=()=>{dl.close();res(true)};
+    $('#revX').onclick=()=>{dl.close();res(false)};
+    dl.oncancel=e=>{e.preventDefault();dl.close();res(false)};
+    dl.showModal();
+  });
 }
 async function newFromCode(code){
   setStatus('Unbekannter Barcode – suche Produktdaten…');
@@ -680,7 +716,8 @@ function markSeen(){
 function go(v,s){query='';panel=null;xq=null;addingShop=false;view=v;if(s)shop=s;render();scrollTo(0,0);refresh()}
 $('#bHome').onclick=()=>go('home');
 function listRow(l){const p=prod(l.id);return `<div class="item tint ${l.erledigt?'done':''}" style="--h:${hueOf(p.kategorie)}" data-t="${l.id}"><span class="box">${l.erledigt?'✓':''}</span>
-        <span class="t"><span class="qty">${fmtQ(p,l.anzahl||1)}</span> ${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}</span>
+        <span class="t">${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}</span>
+        <span class="qty">${fmtQ(p,l.anzahl||1)}</span>
         <button class="x" data-x="${l.id}">✕</button></div>`}
 function bindList(){
   const m=$('#main');
