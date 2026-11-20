@@ -297,6 +297,8 @@ async function load(){
   if(!r.ok) throw new Error(r.status===401?'Token ungültig':r.status===404?'Repo oder Datei nicht gefunden':'Fehler '+r.status);
   const j=await r.json(); sha=j.sha; data=JSON.parse(b64dec(j.content));
   data.liste??=[]; data.historie??=[]; data.notizen??=[]; mergeDupes(data);
+  /* alte App-Versionen legten „Tibarg“ wieder an – leeren Eintrag entfernen */
+  data.geschaefte=data.geschaefte.filter(g=>g.id!=='tibarg'||data.katalog.some(p=>p.geschaeft==='tibarg'));
   /* fehlende Geschäfte ergänzen, feste Reihenfolge */
   for(const [id,name] of [['edeka','Edeka'],['budni','Budni']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
   /* weitere Geschäfte nur einmal anlegen – danach entscheidet die Familie über + und Papierkorb */
