@@ -13,6 +13,7 @@
 <style>
 :root{--bg:#f4f4f2;--card:#fff;--ink:#1f2937;--mute:#6b7280;--line:#e5e7eb;--acc:#f5c400;--ok:#16a34a}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;font:16px/1.4 -apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:var(--bg);color:var(--ink);padding-bottom:env(safe-area-inset-bottom)}
 header{position:sticky;top:0;z-index:5;background:var(--ink);color:#fff;padding:calc(10px + env(safe-area-inset-top)) 12px 0}
 .top{display:flex;align-items:center;gap:8px}
@@ -65,10 +66,20 @@ dialog label{font-size:13px;color:var(--mute)}
 .prow .on{display:inline-block;margin-top:2px;font-size:12px;color:#065f46;background:#d1fae5;border-radius:8px;padding:0 6px}
 .step{display:flex;align-items:center;border:1px solid var(--line);border-radius:10px;overflow:hidden;flex:none}
 .step button{border:0;background:#f3f4f6;width:38px;height:38px;font-size:20px;font-weight:700}
-.step span{min-width:30px;text-align:center;font-weight:700}
+.step span{min-width:44px;text-align:center;font-weight:700;line-height:1.1;padding:0 2px}.step span small{display:block;font-size:10px;font-weight:600;color:var(--mute)}
+.prow .t[data-edit]{cursor:pointer}
 .send{border:0;border-radius:10px;height:40px;padding:0 10px;font-size:14px;font-weight:700;color:#fff;flex:none;min-width:74px}
 .send.edeka{background:#d4a800;color:#111}.send.budni{background:#1b3f8b}.send.none{background:#6b7280}
 .send.upd{outline:3px solid #16a34a55}
+.add .scanb{flex:none;border:0;border-radius:10px;background:var(--ink);color:#fff;font-size:22px;width:52px}
+dialog.scan{padding:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;background:#000;color:#fff}
+dialog.scan video{width:100%;height:100%;object-fit:cover}
+.scanFrame{position:fixed;left:8%;right:8%;top:35%;height:22%;border:3px solid #f7c600;border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45);pointer-events:none}
+.scanBar{position:fixed;left:0;right:0;bottom:0;padding:16px 16px calc(16px + env(safe-area-inset-bottom));text-align:center;background:linear-gradient(transparent,rgba(0,0,0,.8))}
+.scanBar button{margin-top:10px;border:0;border-radius:10px;padding:12px 28px;font-size:16px;font-weight:600}
+.flash{animation:flash 1.6s ease}
+@keyframes flash{0%,40%{background:#fef3c7}100%{background:var(--card)}}
+#fAssBox{background:#f3f4f6;border-radius:10px;padding:8px 10px;margin-bottom:10px}
 .stats div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
 </style>
 </head>
@@ -82,18 +93,33 @@ dialog label{font-size:13px;color:var(--mute)}
 
 <dialog id="dlg">
   <form method="dialog" id="dlgForm">
-    <h3 style="margin-top:0">Neuer Artikel</h3>
+    <h3 style="margin-top:0" id="dlgT">Neuer Artikel</h3>
+    <div id="fAssBox" hidden>
+      <small id="fEanTxt"></small>
+      <label>… oder einem vorhandenen Produkt zuordnen</label>
+      <div class="row"><select id="fAss" style="flex:1;margin:0"></select><button type="button" class="btn" id="fAssBtn" style="width:auto;margin:0;padding:8px 14px">Zuordnen</button></div>
+    </div>
     <label>Name</label><input id="fName" required>
     <label>Marke (optional)</label><input id="fMarke">
     <div class="row">
       <div style="flex:1"><label>Geschäft</label><select id="fShop"></select></div>
       <div style="flex:1"><label>Kategorie</label><input id="fKat" list="kats"></div>
     </div>
+    <div class="row">
+      <div style="flex:1"><label>Maßeinheit</label><select id="fEinh"></select></div>
+      <div style="flex:1"><label>Packungsgröße (optional)</label><input id="fMenge" placeholder="z. B. 500 g"></div>
+    </div>
     <datalist id="kats"></datalist>
-    <div class="row"><button class="btn sec" value="cancel" type="button" id="fCancel">Abbrechen</button><button class="btn" value="ok">Hinzufügen</button></div>
+    <button type="button" class="btn sec" id="fScan" hidden>📷 Barcode diesem Produkt zuordnen</button>
+    <div class="row"><button class="btn sec" value="cancel" type="button" id="fCancel">Abbrechen</button><button class="btn" value="ok" id="fOk">Hinzufügen</button></div>
   </form>
 </dialog>
 
+<dialog id="dScan" class="scan">
+  <video id="scanV" playsinline muted></video>
+  <div class="scanFrame"></div>
+  <div class="scanBar"><div id="scanTxt">Barcode in den Rahmen halten</div><button id="scanX">Abbrechen</button></div>
+</dialog>
 <dialog id="dShop">
   <h3 style="margin-top:0">Wo gibt es das?</h3>
   <p id="dShopTxt" style="color:var(--mute);margin-top:0"></p>
@@ -169,14 +195,14 @@ async function refresh(){
 /* ---------- Logik ---------- */
 const prod=id=>data.katalog.find(p=>p.id===id);
 const label=p=>p.marke?`${p.marke} ${p.name}`:p.name;
-function freq(){const f={};for(const h of data.historie)f[h.id]=(f[h.id]||0)+(h.anzahl||1);return f}
+function freq(){const f={};for(const h of data.historie)f[h.id]=(f[h.id]||0)+1;return f}
 function lastBought(id){let d='';for(const h of data.historie)if(h.id===id&&h.datum>d)d=h.datum;return d}
 function shopItems(s){return data.liste.filter(l=>{const p=prod(l.id);return p&&p.geschaeft===s})}
 
 function addItem(id){
   change('+ '+label(prod(id)),d=>{
     const e=d.liste.find(l=>l.id===id&&!l.erledigt);
-    if(e) e.anzahl=(e.anzahl||1)+1; else d.liste.push({id,anzahl:1,von:cfg.name||'',am:today()});
+    if(e) e.anzahl=(e.anzahl||1)+stepOf(prod(id)); else d.liste.push({id,anzahl:suggest(id),von:cfg.name||'',am:today()});
   });
   query='';
 }
@@ -213,24 +239,79 @@ function newProduct(){
   const defShop=view==='shop'?shop:'';
   $('#fShop').innerHTML=`<option value="">– bitte wählen –</option>`+data.geschaefte.filter(g=>SHOPS.includes(g.id)).map(g=>`<option value="${g.id}" ${g.id===defShop?'selected':''}>${esc(g.name)}</option>`).join('');
   $('#kats').innerHTML=[...new Set(data.katalog.map(p=>p.kategorie))].map(k=>`<option value="${esc(k)}">`).join('');
-  $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';
+  $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';$('#fMenge').value='';
+  $('#fEinh').innerHTML=Object.keys(EINH).map(u=>`<option>${u}</option>`).join('');$('#fEinh').value='Stück';
+  editId=null;scanEan=null;$('#dlgT').textContent='Neuer Artikel';$('#fOk').textContent='Hinzufügen';$('#fAssBox').hidden=true;$('#fScan').hidden=true;
   $('#dlg').showModal();
 }
 $('#fCancel').onclick=()=>$('#dlg').close();
+let editId=null;
+function editProduct(id){
+  const p=prod(id); if(!p) return;
+  newProduct();
+  editId=id;$('#dlgT').textContent='Artikel bearbeiten';$('#fOk').textContent='Speichern';
+  $('#fName').value=p.name;$('#fMarke').value=p.marke||'';$('#fKat').value=p.kategorie;$('#fMenge').value=p.menge||'';
+  $('#fEinh').value=unitOf(p);$('#fShop').value=SHOPS.includes(p.geschaeft)?p.geschaeft:'';
+  $('#fScan').hidden=false;
+  $('#fScan').textContent=(p.eans?.length?`📷 Weiteren Barcode zuordnen (${p.eans.length} gespeichert)`:'📷 Barcode diesem Produkt zuordnen');
+}
+$('#fScan').onclick=async()=>{
+  const id=editId; $('#dlg').close();
+  const code=await scanBarcode(); if(!code) return;
+  addEan(id,code);
+};
+$('#fAssBtn').onclick=()=>{const id=$('#fAss').value,code=scanEan;if(!id||!code)return;$('#dlg').close();addEan(id,code).then(()=>showProduct(id))};
 $('#dlgForm').onsubmit=e=>{
   e.preventDefault();
   const name=$('#fName').value.trim(); if(!name) return;
-  const p={id:'p'+Date.now().toString(36),name,marke:$('#fMarke').value.trim(),kategorie:$('#fKat').value.trim()||'Sonstiges',geschaeft:$('#fShop').value};
+  if(editId){
+    const id=editId,v={name,marke:$('#fMarke').value.trim(),kategorie:$('#fKat').value.trim()||'Sonstiges',einheit:$('#fEinh').value,menge:$('#fMenge').value.trim(),geschaeft:$('#fShop').value};
+    $('#dlg').close();editId=null;
+    change('Bearbeitet: '+name,d=>{const x=d.katalog.find(x=>x.id===id);if(!x)return;Object.assign(x,v);if(!x.menge)delete x.menge;if(!x.geschaeft)x.geschaeft='sonstiges';});
+    return;
+  }
+  const p={id:'p'+Date.now().toString(36),name,marke:$('#fMarke').value.trim(),kategorie:$('#fKat').value.trim()||'Sonstiges',geschaeft:$('#fShop').value,einheit:$('#fEinh').value};
+  const mg=$('#fMenge').value.trim(); if(mg) p.menge=mg;
+  if(scanEan) p.eans=[scanEan];
   $('#dlg').close(); query='';
   (async()=>{
     if(!p.geschaeft){p.geschaeft=await askShop(p);if(!p.geschaeft)return}
-    change('Neu: '+label(p),d=>{if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);d.liste.push({id:p.id,anzahl:1,von:cfg.name||'',am:today()})});
+    change('Neu: '+label(p),d=>{if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);d.liste.push({id:p.id,anzahl:stepOf(p),von:cfg.name||'',am:today()})});
   })();
 };
 
 /* ---------- Produktgruppen ---------- */
 const ICON={'Eier':'🥚','Getränke':'🥤','Obst & Gemüse':'🥦','Fleisch':'🥩','Wurst':'🌭','Käse':'🧀','Müsli & Frühstück':'🥣','Tomatensauce & Saucen':'🍅','Kühlprodukte':'🧈','Nudeln & Reis':'🍝','Konserven':'🥫','Tiefkühl':'🧊','Backen':'🧁','Vorrat':'🫒','Brot':'🥖','Süßes & Snacks':'🍫','Tee':'🍵','Haushalt':'🧻','Putzmittel':'🧽','Wäsche':'🧺','Körperpflege':'🧴','Haare':'💇','Gesicht':'🧖','Kosmetik':'💄','Zahnpflege':'🪥','Herren':'🪒'};
 const SHOPS=['edeka','budni'];
+/* Maßeinheiten: Plural, Schrittweite */
+const EINH={'Stück':['Stück',1],'Packung':['Packungen',1],'Flasche':['Flaschen',1],'Glas':['Gläser',1],'Dose':['Dosen',1],'Becher':['Becher',1],'Tube':['Tuben',1],'Beutel':['Beutel',1],'Netz':['Netze',1],'Bund':['Bund',1],'Sixpack':['Sixpacks',1],'Kiste':['Kisten',1],'kg':['kg',0.5],'g':['g',100],'l':['l',0.5],'ml':['ml',100]};
+/* Für Katalogartikel ohne gespeicherte Einheit eine sinnvolle Vorgabe ableiten */
+function guessUnit(p){
+  const t=(p.name+' '+(p.marke||'')+' '+(p.menge||'')).toLowerCase(), k=p.kategorie;
+  const has=(...w)=>w.some(x=>t.includes(x));
+  if(has('sixpack')) return 'Sixpack';
+  if(k==='Getränke') return has('pils','radler')?'Flasche':'Packung';
+  if(['Tiefkühl','Süßes & Snacks','Backen','Nudeln & Reis','Brot'].includes(k)) return 'Packung';
+  if(has('glasreiniger')) return 'Flasche';
+  if(has('riegel','rasierklingen')) return 'Packung';
+  if(has('kiwi','maiskolben')) return 'Packung';
+  if(has('tube','zahncreme','tomatenmark','mayonnaise','rasiercreme','handcreme','hand- & nagel','gelée','fluoridgel')) return 'Tube';
+  if(has('dose','mandarin','pfirsich','goldmais','nivea creme')) return 'Dose';
+  if(has('glas','gurken','pesto','basilico','passata','sauerkraut','apfelmus','konfitüre','honig','crunchy cream','pickles','bambus','knoblauch','tomaten fein')) return 'Glas';
+  if(has('becher','crème fraîche','sanella','streichzarte','frischkäse','kräuter-frischkäse','miree')) return 'Becher';
+  if(has('pils','radler','öl','saft','ketchup','sauce','aceto','balsamico','shampoo','spülung','dusch','lotion','mundspülung','reiniger','weichspüler','spüler','scheuermilch','parkettpflege','fleckentferner','perwoll','coral','sagrotan','intimate','nagellack','rohrfrei','backofen','schimmel','pflege-öl','reinigungsmilch')) return 'Flasche';
+  if(has('äpfel','orangen','karotten')) return 'kg';
+  if(has('paprika','gurke','butter 250','lippen','mascara','deo','rasierklingen')) return 'Stück';
+  if(['Obst & Gemüse','Gesicht','Kosmetik','Herren'].includes(k)) return 'Stück';
+  return 'Packung';
+}
+const unitOf=p=>p?(EINH[p.einheit]?p.einheit:guessUnit(p)):'Stück';
+const stepOf=p=>EINH[unitOf(p)][1];
+const fmtN=n=>String(Math.round(n*100)/100).replace('.',',');
+const fmtQ=(p,n)=>{const u=unitOf(p);return fmtN(n)+' '+(n===1?u:EINH[u][0])};
+/* Vorschlag: Menge des letzten Einkaufs, sonst 1 Schritt */
+function lastQty(id){let b=null;for(const h of data.historie)if(h.id===id&&(!b||h.datum>=b.datum))b=h;return b?.anzahl||null}
+const suggest=id=>lastQty(id)??stepOf(prod(id));
 function groups(){
   const g=data.geschaefte.find(x=>x.id==='edeka')?.gaenge||[];
   const rest=[...new Set(data.katalog.map(p=>p.kategorie))].filter(k=>!g.includes(k)).sort((a,b)=>a.localeCompare(b,'de'));
@@ -255,7 +336,7 @@ function askShop(p){
   });
 }
 async function send(id){
-  const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||1);
+  const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||suggest(id));
   if(!SHOPS.includes(p.geschaeft)){
     const s=await askShop(p); if(!s) return;
     await change(`${label(p)} → ${s}`,d=>{const x=d.katalog.find(x=>x.id===id);if(x){x.geschaeft=s;delete x.auchBei}});
@@ -264,7 +345,7 @@ async function send(id){
 }
 function renderHome(){
   const on={}; for(const l of data.liste) if(!l.erledigt){const k=prod(l.id)?.kategorie;if(k)on[k]=(on[k]||0)+1}
-  let html=`<div class="add"><input id="q" placeholder="Alle Produkte durchsuchen…" autocomplete="off" value="${esc(query)}"></div>`;
+  let html=`<div class="add"><input id="q" placeholder="Alle Produkte durchsuchen…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">📷</button></div>`;
   if(query){
     const q=query.toLowerCase(), f=freq();
     const hits=data.katalog.filter(p=>label(p).toLowerCase().includes(q)).sort((a,b)=>(f[b.id]||0)-(f[a.id]||0)).slice(0,25);
@@ -277,22 +358,25 @@ function renderHome(){
   $('#main').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{group=b.dataset.g;view='group';render();scrollTo(0,0)});
 }
 function prow(p){
-  const e=openEntry(p.id), n=cnt[p.id]??(e?.anzahl||1), sh=SHOPS.includes(p.geschaeft)?p.geschaeft:'none';
+  const e=openEntry(p.id), n=cnt[p.id]??(e?.anzahl||suggest(p.id)), sh=SHOPS.includes(p.geschaeft)?p.geschaeft:'none';
   const shopName=sh==='edeka'?'Edeka':sh==='budni'?'Budni':'?';
   const changed=e&&n!==e.anzahl;
-  return `<div class="prow"><div class="t">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small>
-      ${e?`<br><span class="on">✓ ${e.anzahl}× auf ${shopName}-Liste</span>`:''}</div>
-    <div class="step"><button data-m="${p.id}">−</button><span>${n}</span><button data-p="${p.id}">+</button></div>
+  return `<div class="prow"><div class="t" data-edit="${p.id}">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small>
+      ${e?`<br><span class="on">✓ ${fmtQ(p,e.anzahl)} auf ${shopName}-Liste</span>`:''}</div>
+    <div class="step"><button data-m="${p.id}">−</button><span>${fmtN(n)}<small>${esc(unitOf(p)==='Stück'?'':' '+(n===1?unitOf(p):EINH[unitOf(p)][0]))}</small></span><button data-p="${p.id}">+</button></div>
     <button class="send ${sh} ${changed?'upd':''}" data-send="${p.id}">${e?(n?'Ändern':'Löschen'):'→ '+shopName}</button></div>`;
 }
 function bindRows(){
   const m=$('#main');
-  m.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const id=b.dataset.p;cnt[id]=(cnt[id]??(openEntry(id)?.anzahl||1))+1;render()});
-  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const id=b.dataset.m,e=openEntry(id);cnt[id]=Math.max(e?0:1,(cnt[id]??(e?.anzahl||1))-1);render()});
+  const cur=id=>cnt[id]??(openEntry(id)?.anzahl||suggest(id));
+  m.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const id=b.dataset.p;cnt[id]=Math.round((cur(id)+stepOf(prod(id)))*100)/100;render()});
+  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const id=b.dataset.m,st=stepOf(prod(id));cnt[id]=Math.max(openEntry(id)?0:st,Math.round((cur(id)-st)*100)/100);render()});
+  m.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editProduct(b.dataset.edit));
   m.querySelectorAll('[data-send]').forEach(b=>b.onclick=()=>send(b.dataset.send));
   m.querySelectorAll('[data-new]').forEach(e=>e.onclick=newProduct);
 }
 function bindSearch(){
+  $('#bScan')&&($('#bScan').onclick=onScan);
   const q=$('#q'); if(!q) return;
   q.oninput=()=>{query=q.value;render();const n=$('#q');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
 }
@@ -304,6 +388,95 @@ function renderGroup(){
     <button class="btn sec" data-new="1">＋ Neues Produkt in „${esc(group)}“</button>`;
   bindRows();
   $('#gBack').onclick=()=>{view='home';render()};
+}
+
+/* ---------- Barcode ---------- */
+let scanEan=null;
+const loadScript=src=>new Promise((ok,no)=>{if(window.ZXing)return ok();const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('Scanner konnte nicht geladen werden'));document.head.appendChild(s)});
+function scanBarcode(){
+  const dl=$('#dScan'), v=$('#scanV'), txt=$('#scanTxt');
+  let stream=null, stop=false, zx=null, done=false;
+  return new Promise(res=>{
+    const finish=code=>{
+      if(done) return; done=true; stop=true;
+      try{zx&&zx.reset()}catch{}
+      if(stream) stream.getTracks().forEach(t=>t.stop());
+      if(v.srcObject) v.srcObject.getTracks?.().forEach(t=>t.stop());
+      v.srcObject=null; if(dl.open) dl.close();
+      if(code) navigator.vibrate?.(80);
+      res(code);
+    };
+    $('#scanX').onclick=()=>finish(null);
+    dl.oncancel=e=>{e.preventDefault();finish(null)};
+    txt.textContent='Kamera wird gestartet…'; dl.showModal();
+    (async()=>{
+      try{
+        const cam={video:{facingMode:{ideal:'environment'},width:{ideal:1280},height:{ideal:720}}};
+        let det=null;
+        if('BarcodeDetector' in window){
+          try{const fm=await BarcodeDetector.getSupportedFormats();const want=['ean_13','ean_8','upc_a','upc_e','code_128'].filter(f=>fm.includes(f));if(want.length)det=new BarcodeDetector({formats:want})}catch{}
+        }
+        if(det){
+          stream=await navigator.mediaDevices.getUserMedia(cam); v.srcObject=stream; await v.play();
+          txt.textContent='Barcode in den Rahmen halten';
+          const loop=async()=>{if(stop)return;try{const r=await det.detect(v);if(r.length)return finish(r[0].rawValue)}catch{}setTimeout(loop,120)};
+          loop();
+        }else{
+          await loadScript('zxing.min.js'); if(stop) return;
+          const hints=new Map();
+          hints.set(ZXing.DecodeHintType.POSSIBLE_FORMATS,[ZXing.BarcodeFormat.EAN_13,ZXing.BarcodeFormat.EAN_8,ZXing.BarcodeFormat.UPC_A,ZXing.BarcodeFormat.UPC_E,ZXing.BarcodeFormat.CODE_128]);
+          zx=new ZXing.BrowserMultiFormatReader(hints);
+          txt.textContent='Barcode in den Rahmen halten';
+          await zx.decodeFromConstraints(cam,v,r=>{if(r&&!stop)finish(r.getText())});
+        }
+      }catch(e){txt.textContent=(e.name==='NotAllowedError'?'Kamera-Zugriff wurde nicht erlaubt. Bitte in den Browser-Einstellungen für diese Seite erlauben.':'Kamera nicht verfügbar: '+e.message)}
+    })();
+  });
+}
+const byEan=code=>data.katalog.find(p=>(p.eans||[]).includes(code));
+function addEan(id,code){
+  return change('Barcode → '+label(prod(id)),d=>{
+    for(const x of d.katalog) if(x.eans) x.eans=x.eans.filter(c=>c!==code||x.id===id);
+    const x=d.katalog.find(x=>x.id===id); if(!x) return;
+    x.eans=[...new Set([...(x.eans||[]),code])];
+  });
+}
+function showProduct(id){
+  const p=prod(id); if(!p) return;
+  group=p.kategorie; view='group'; query=''; render();
+  const el=document.querySelector(`.prow [data-send="${id}"]`)?.closest('.prow');
+  if(el){el.scrollIntoView({block:'center'});el.classList.add('flash')}
+}
+/* Produktdaten zu unbekannten Barcodes bei Open Food/Beauty/Products Facts nachschlagen */
+async function lookupEan(code){
+  for(const host of ['world.openfoodfacts.org','world.openbeautyfacts.org','world.openproductsfacts.org']){
+    try{
+      const r=await fetch(`https://${host}/api/v2/product/${encodeURIComponent(code)}.json?fields=product_name,product_name_de,generic_name_de,brands,quantity`);
+      if(!r.ok) continue; const j=await r.json();
+      if(j.status===1&&j.product){const p=j.product;return{name:p.product_name_de||p.product_name||p.generic_name_de||'',marke:(p.brands||'').split(',')[0].trim(),menge:p.quantity||''}}
+    }catch{}
+  }
+  return null;
+}
+function similar(info){
+  const words=(info?(info.name+' '+info.marke):'').toLowerCase().split(/[^a-zäöüß0-9]+/).filter(w=>w.length>2);
+  const sc=p=>{const t=label(p).toLowerCase();return words.reduce((a,w)=>a+(t.includes(w)?1:0),0)};
+  return [...data.katalog].map(p=>({p,s:sc(p)})).sort((a,b)=>b.s-a.s||a.p.name.localeCompare(b.p.name,'de'));
+}
+async function onScan(){
+  const code=await scanBarcode(); if(!code) return;
+  const hit=byEan(code);
+  if(hit){setStatus('Gefunden: '+label(hit));return showProduct(hit.id)}
+  setStatus('Unbekannter Barcode – suche Produktdaten…');
+  const info=await lookupEan(code);
+  setStatus(info?'Produktdaten gefunden':'Keine Produktdaten gefunden');
+  query=info?.name||''; newProduct(); query='';
+  scanEan=code;
+  if(info){$('#fMarke').value=info.marke;$('#fMenge').value=info.menge}
+  $('#fEanTxt').textContent=`Barcode ${code}`+(info?' – Angaben aus der Open-Food-Facts-Datenbank, bitte prüfen.':' – nicht in der Datenbank, bitte Namen eintragen.');
+  const list=similar(info);
+  $('#fAss').innerHTML='<option value="">– Produkt wählen –</option>'+list.map(({p,s})=>`<option value="${p.id}">${s?'★ ':''}${esc(label(p))}</option>`).join('');
+  $('#fAssBox').hidden=false;
 }
 
 /* ---------- Ansicht ---------- */
@@ -325,7 +498,7 @@ function render(){
   const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
   const cand=data.katalog.filter(p=>p.geschaeft===shop||p.auchBei===shop);
   const score=p=>(f[p.id]||0)*10+(p.favorit?5:0);
-  let html=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"></div>`;
+  let html=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">📷</button></div>`;
   if(query){
     const q=query.toLowerCase();
     const hits=cand.filter(p=>label(p).toLowerCase().includes(q)||p.kategorie.toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a)).slice(0,12);
@@ -338,7 +511,7 @@ function render(){
   const items=shopItems(shop);
   if(!items.length) html+=`<div class="empty">Nichts auf der Liste 🎉</div>`;
   const row=l=>{const p=prod(l.id);return `<div class="item ${l.erledigt?'done':''}" data-t="${l.id}"><span class="box">${l.erledigt?'✓':''}</span>
-        <span class="t">${(l.anzahl||1)>1?`<span class="qty">${l.anzahl}×</span>`:''}${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}${l.von?' · '+esc(l.von):''}</small></span>
+        <span class="t">${((l.anzahl||1)!==1||unitOf(p)!=='Stück')?`<span class="qty">${fmtQ(p,l.anzahl||1)}</span> `:''}${esc(p.name)}<br><small>${esc([p.marke,p.menge,l.von].filter(Boolean).join(' · '))}</small></span>
         <button class="x" data-x="${l.id}">✕</button></div>`};
   const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,shop,prod(a.id))-rankOf(data,shop,prod(b.id)));
   const inCart=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
