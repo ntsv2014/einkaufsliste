@@ -452,7 +452,6 @@ function toggle(id){
 async function allBought(s){
   const open=shopItems(s).filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,s,prod(a.id))-rankOf(data,s,prod(b.id))).map(l=>l.id);
   const all=shopItems(s).length; if(!all) return;
-  if(!confirm(`Alle ${all} Artikel bei ${shopName(s)} als eingekauft markieren und die Liste leeren?`)) return;
   const t=Date.now();
   if(open.length) change(`Alles eingekauft (${shopName(s)})`,d=>{open.forEach((id,i)=>{for(const e of d.liste)if(e.id===id&&!e.erledigt){e.erledigt=true;e.um=t+i}})});
   await finish(s);
