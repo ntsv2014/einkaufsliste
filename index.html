@@ -107,6 +107,15 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 .shead .cnt{min-width:20px;padding:0 6px;border-radius:10px;background:var(--acc);color:#111;font-size:12px;text-align:center}
 .shead .del{border:0;background:none;font-size:18px;padding:2px 6px;opacity:.75}
 .send{background:#7c3aed}
+nav button{position:relative}
+nav .ti{font-size:19px;line-height:1;padding:0 6px}
+nav .dot{position:absolute;top:5px;right:4px;width:7px;height:7px;border-radius:50%;background:var(--acc);box-shadow:0 0 0 1.5px var(--hdr)}
+nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
+.qrbox{display:flex;flex-direction:column;align-items:center;gap:8px;margin:8px 0 4px}
+.qrbox .qr{background:#fff;padding:8px;border-radius:12px;line-height:0}
+.qrbox .qr svg{width:190px;height:190px}
+.qrbox a{color:var(--fg);font-size:14px;word-break:break-all}
+.hint{color:var(--mute);font-size:13px}
 </style>
 </head>
 <body>
@@ -248,7 +257,7 @@ function shopItems(s){return data.liste.filter(l=>{const p=prod(l.id);return p&&
 function addItem(id){
   change('+ '+label(prod(id)),d=>{
     const e=d.liste.find(l=>l.id===id&&!l.erledigt);
-    if(e) e.anzahl=(e.anzahl||1)+stepOf(prod(id)); else d.liste.push({id,anzahl:suggest(id),von:cfg.name||'',am:today()});
+    if(e) e.anzahl=(e.anzahl||1)+stepOf(prod(id)); else d.liste.push({id,anzahl:suggest(id),von:cfg.name||'',am:today(),ts:Date.now()});
   });
   query='';
 }
@@ -330,7 +339,7 @@ $('#dlgForm').onsubmit=e=>{
   $('#dlg').close(); query='';
   (async()=>{
     if(!p.geschaeft){p.geschaeft=await askShop(p);if(!p.geschaeft)return}
-    change('Neu: '+label(p),d=>{if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);d.liste.push({id:p.id,anzahl:stepOf(p),von:cfg.name||'',am:today()})});
+    change('Neu: '+label(p),d=>{if(!d.katalog.some(x=>x.id===p.id))d.katalog.push(p);d.liste.push({id:p.id,anzahl:stepOf(p),von:cfg.name||'',am:today(),ts:Date.now()})});
   })();
 };
 
@@ -384,7 +393,7 @@ function setOnList(id,n){
   change(`${n?'= '+n+'×':'−'} ${label(p)}`,d=>{
     const e=d.liste.find(l=>l.id===id&&!l.erledigt);
     if(!n){d.liste=d.liste.filter(l=>l!==e);return}
-    if(e) e.anzahl=n; else d.liste.push({id,anzahl:n,von:cfg.name||'',am:today()});
+    if(e) e.anzahl=n; else d.liste.push({id,anzahl:n,von:cfg.name||'',am:today(),ts:Date.now()});
   });
 }
 function askShop(p){
@@ -544,13 +553,21 @@ async function onScan(){
 /* ---------- Ansicht ---------- */
 function renderTabs(){
   $('#bHome').classList.toggle('on',view==='home'||view==='group');
-  const badge=n=>n?`<span class="n">${n}</span>`:'';
-  const open=id=>shopItems(id).filter(l=>!l.erledigt).length;
-  $('#tabs').innerHTML=CORE.map(id=>`<button data-v="shop" data-s="${id}" class="${view==='shop'&&id===shop?'on':''}">${esc(shopName(id))}${badge(open(id))}</button>`).join('')
-    +`<button data-v="extra" class="${view==='extra'?'on':''}">Sonstige${badge(EXTRAS().reduce((a,g)=>a+open(g.id),0))}</button>`
+  /* Punkt am Tab: seit dem letzten Besuch dieses Tabs hat jemand anderes etwas auf die Liste gesetzt */
+  const seen=JSON.parse(localStorage.getItem(SEEN_KEY)||'{}');
+  const fresh=(ids,key)=>data.liste.some(l=>!l.erledigt&&(l.ts||0)>(seen[key]||0)&&l.von!==cfg.name&&ids.includes(prod(l.id)?.geschaeft));
+  const dot=b=>b?'<span class="dot"></span>':'';
+  $('#tabs').innerHTML=CORE.map(id=>`<button data-v="shop" data-s="${id}" class="${view==='shop'&&id===shop?'on':''}" title="${esc(shopName(id))}">${TABLABEL[id]||esc(shopName(id))}${dot(fresh([id],id))}</button>`).join('')
+    +`<button data-v="extra" class="${view==='extra'?'on':''}">Andere${dot(fresh(EXTRAS().map(g=>g.id),'andere'))}</button>`
     +`<button data-v="info" class="info ${view==='info'||view==='stats'?'on':''}" title="Info">ⓘ</button>`;
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.v,b.dataset.s));
   const on=$('#tabs .on'); on&&on.scrollIntoView({inline:'nearest',block:'nearest'});
+}
+const SEEN_KEY='einkauf.seen';
+const TABLABEL={edeka:'<span class="ti">🥕</span>',budni:'<span class="ti">🧴</span>'};
+function markSeen(){
+  const k=view==='shop'?shop:view==='extra'?'andere':null; if(!k) return;
+  const seen=JSON.parse(localStorage.getItem(SEEN_KEY)||'{}'); seen[k]=Date.now(); localStorage.setItem(SEEN_KEY,JSON.stringify(seen));
 }
 function go(v,s){query='';panel=null;xq=null;addingShop=false;view=v;if(s)shop=s;render();scrollTo(0,0);refresh()}
 $('#bHome').onclick=()=>go('home');
@@ -614,6 +631,7 @@ function render(){
   if(!cfg){renderSetup();return}
   if(!data) return;
   if(!shop||!CORE.includes(shop)) shop='edeka';
+  markSeen();
   renderTabs();
   if(view==='home') return renderHome();
   if(view==='group') return renderGroup();
@@ -658,9 +676,19 @@ function render(){
 }
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
-    <p style="color:var(--mute);font-size:14px;margin-top:0">Verbunden als <b>${esc(cfg.name||'–')}</b> · ${esc(cfg.owner)}/${esc(cfg.repo)}<br>${data.katalog.length} Produkte · ${data.liste.filter(l=>!l.erledigt).length} offen auf den Listen · ${data.historie.length} Käufe erfasst</p>
+    <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b><br>${data.katalog.length} Produkte · ${data.liste.filter(l=>!l.erledigt).length} offen auf den Listen · ${data.historie.length} Käufe erfasst</p>
     <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
     <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
+    <label style="display:block;font-size:13px;color:var(--mute);margin:14px 0 0">App teilen</label>
+    <div class="qrbox"><div class="qr" id="qrShare"></div><a href="${APP_URL}">${APP_URL.replace('https://','')}</a></div>
+    <button class="btn sec" id="iShare" style="margin-top:6px">↗︎ Link teilen</button>
+    <details style="margin-top:14px"><summary style="font-weight:600;cursor:pointer">👪 Familienmitglied einladen (mit Schlüssel)</summary>
+      <p class="hint">Erzeugt einen QR-Code, der die App auf dem anderen Handy fertig einrichtet. Den Schlüssel vorher auf GitHub für diese Person anlegen. Den Code nur direkt vom Bildschirm scannen lassen – nicht als Foto verschicken, denn er enthält den Schlüssel.</p>
+      <label class="hint">Name</label><input id="invName" placeholder="z. B. Johannes" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:4px 0 8px">
+      <label class="hint">Schlüssel dieser Person</label><input id="invTok" type="password" placeholder="github_pat_…" autocapitalize="off" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:4px 0 8px">
+      <button class="btn" id="invGo" style="margin-top:4px">Einladungs-Code erzeugen</button>
+      <div class="qrbox" id="invOut" hidden><div class="qr" id="qrInv"></div><small class="hint">Mit der Handykamera scannen und den Link öffnen.</small><button class="btn sec" id="invHide" style="padding:8px">Code ausblenden</button></div>
+    </details>
     <button class="btn sec" id="iStats">📊 Kaufhäufigkeit</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
     <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
@@ -669,6 +697,23 @@ function renderInfo(){
   $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=renderSetup;
+  qrInto('#qrShare',APP_URL);
+  $('#iShare').onclick=async()=>{try{if(navigator.share)await navigator.share({title:'Einkaufsliste',url:APP_URL});else{await navigator.clipboard.writeText(APP_URL);setStatus('Link kopiert')}}catch{}};
+  $('#invGo').onclick=()=>{
+    const name=$('#invName').value.trim(), token=clean($('#invTok').value);
+    if(!name||!token){setStatus('⚠︎ Bitte Name und Schlüssel eintragen');return}
+    const inv=btoa(unescape(encodeURIComponent(JSON.stringify({n:name,o:cfg.owner,r:cfg.repo,p:cfg.path,t:token}))));
+    qrInto('#qrInv',APP_URL+'#invite='+inv); $('#invOut').hidden=false; $('#invTok').value='';
+  };
+  $('#invHide').onclick=()=>{$('#qrInv').innerHTML='';$('#invOut').hidden=true};
+}
+const APP_URL=location.protocol==='https:'?location.origin+location.pathname.replace(/index\.html$/,''):'https://ntsv2014.github.io/einkaufsliste/';
+async function qrInto(sel,text){
+  try{
+    await new Promise((ok,no)=>{if(window.qrcode)return ok();const sc=document.createElement('script');sc.src='qrcode.js';sc.onload=ok;sc.onerror=no;document.head.appendChild(sc)});
+    const q=qrcode(0,'M'); q.addData(text); q.make();
+    const el=$(sel); if(el) el.innerHTML=q.createSvgTag({cellSize:4,margin:0,scalable:true});
+  }catch{const el=$(sel);if(el)el.textContent='QR-Code nicht verfügbar'}
 }
 function renderStats(){
   if(!data) return;
@@ -708,6 +753,16 @@ function renderSetup(){
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
 /* nur lokale Prüfung (ohne Netz), ob ein Einkauf automatisch abgeschlossen werden muss */
 setInterval(()=>{if(!document.hidden&&!busy)autoFinish()},5*60*1000);
+/* Einladungs-Link: App fertig einrichten, Schlüssel sofort aus der Adresse entfernen */
+(()=>{
+  const m=location.hash.match(/invite=([^&]+)/); if(!m) return;
+  history.replaceState(null,'',location.pathname+location.search);
+  try{
+    const v=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
+    cfg={name:v.n,owner:v.o,repo:v.r,path:v.p||'liste.json',token:v.t};
+    localStorage.setItem(LS,JSON.stringify(cfg)); setTimeout(()=>setStatus('Willkommen, '+v.n+'!'),800);
+  }catch{setTimeout(()=>setStatus('⚠︎ Einladungs-Code ungültig'),500)}
+})();
 cfg?refresh():renderSetup();
 if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
