@@ -86,6 +86,7 @@ dialog label{font-size:13px;color:var(--mute)}
 .prow .t[data-edit]{cursor:pointer}
 .send{border:0;border-radius:10px;height:40px;padding:0 10px;font-size:14px;font-weight:700;color:#fff;flex:none;min-width:74px}
 .send.edeka{background:#d4a800;color:#111}.send.budni{background:#1b3f8b}.send.tibarg{background:#0e7490}.send.baumarkt{background:#c2410c}.send.sonstiges{background:#6b7280}.send.none{background:#9ca3af;color:#111}
+.send.onl{background:var(--btn2);color:var(--fg)}
 .send.upd{outline:3px solid #16a34a55}
 .add .scanb{flex:none;border:0;border-radius:10px;background:var(--hdr);color:#fff;width:52px;display:grid;place-items:center}
 #fScan svg{vertical-align:-4px;margin-right:4px}
@@ -153,6 +154,11 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .dlghead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
 .dlghead h3{margin:0;flex:1}
 .bcbtn{flex:none;border:0;border-radius:10px;background:var(--hdr);color:#fff;width:48px;height:40px;display:grid;place-items:center}
+.crow{display:flex;align-items:center;gap:8px;padding:6px 6px 6px 10px;border-radius:8px;margin-bottom:3px;font-size:15px}
+.crow.tint{background:hsl(var(--h) var(--ts) var(--tl))}
+.crow .t{flex:1;min-width:0;cursor:pointer}
+.crow small{color:var(--mute);font-size:12px}
+.crow button{flex:none;border:0;background:none;font-size:17px;padding:4px 6px;opacity:.7}
 </style>
 </head>
 <body>
@@ -534,7 +540,8 @@ function askShop(p){
   });
 }
 async function send(id){
-  const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||suggest(id));
+  const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||suggest(id)), e0=openEntry(id);
+  if(e0&&n===e0.anzahl){setStatus('Steht schon auf der Liste – Menge mit − / + ändern');return}
   if(!SHOPS().includes(p.geschaeft)){
     const s=await askShop(p); if(!s) return;
     await change(`${label(p)} → ${s}`,d=>{const x=d.katalog.find(x=>x.id===id);if(x){x.geschaeft=s;delete x.auchBei}});
@@ -562,7 +569,7 @@ function prow(p){
   return `<div class="prow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-edit="${p.id}">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small>
       ${e?`<br><span class="on">✓ ${fmtQ(p,e.anzahl)} auf ${esc(sn)}-Liste</span>`:''}</div>
     <div class="step"><button data-m="${p.id}">−</button><span>${fmtN(n)}<small>${esc(unitOf(p)==='Stück'?'':' '+(n===1?unitOf(p):EINH[unitOf(p)][0]))}</small></span><button data-p="${p.id}">+</button></div>
-    <button class="send ${sh} ${changed?'upd':''}" data-send="${p.id}">${e?(n?'Ändern':'Löschen'):'→ '+esc(sn)}</button></div>`;
+    <button class="send ${e&&!changed?'onl':sh} ${changed?'upd':''}" data-send="${p.id}">${e?(changed?(n?'Ändern':'Löschen'):'✓ Liste'):'→ '+esc(sn)}</button></div>`;
 }
 function bindRows(){
   const m=$('#main');
@@ -765,7 +772,7 @@ function renderTabs(){
   const dot=b=>b?'<span class="dot"></span>':'';
   $('#tabs').innerHTML=CORE.map(id=>`<button data-v="shop" data-s="${id}" class="${view==='shop'&&id===shop?'on':''}" title="${esc(shopName(id))}">${TABLABEL[id]||esc(shopName(id))}${dot(fresh([id],id))}</button>`).join('')
     +`<button data-v="extra" class="${view==='extra'?'on':''}">Andere${dot(fresh(EXTRAS().map(g=>g.id),'andere'))}</button>`
-    +`<button data-v="info" class="info ${view==='info'||view==='stats'||view==='setup'?'on':''}" title="Info">ⓘ</button>`;
+    +`<button data-v="info" class="info ${['info','stats','setup','catalog'].includes(view)?'on':''}" title="Info">ⓘ</button>`;
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.v,b.dataset.s));
   const on=$('#tabs .on'); on&&on.scrollIntoView({inline:'nearest',block:'nearest'});
 }
@@ -865,6 +872,7 @@ function render(){
   if(view==='group') return renderGroup();
   if(view==='info') return renderInfo();
   if(view==='setup') return renderSetup();
+  if(view==='catalog') return renderCatalog();
   if(view==='extra') return renderExtras();
   if(view==='stats') return renderStats();
   const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
@@ -903,6 +911,35 @@ function render(){
   $('#pTop').onclick=()=>{panel=panel==='top'?null:'top';query='';render()};
   ['#pClose','#pClose2'].forEach(k=>$(k)&&($(k).onclick=()=>{panel=null;render();scrollTo(0,0)}));
 }
+/* ---------- Produktkatalog bearbeiten ---------- */
+let catQ='', catShop='';
+function renderCatalog(){
+  const q=catQ.trim().toLowerCase(), ws=q?q.split(/\s+/):[];
+  const ps=data.katalog.filter(p=>(!catShop||p.geschaeft===catShop)&&ws.every(w=>(label(p)+' '+p.kategorie+' '+shopName(p.geschaeft)+' '+(p.eans||[]).join(' ')).toLowerCase().includes(w)));
+  const by={}; for(const p of ps)(by[p.kategorie]??=[]).push(p);
+  const order=groups().filter(k=>by[k]);
+  let html=`<div class="ghead"><button id="cBack">‹ Zurück</button><h3>✎ Produktkatalog</h3></div>
+    <div class="add"><input id="cQ" placeholder="Suchen (Name, Marke, Gruppe, Barcode)…" autocomplete="off" value="${esc(catQ)}"></div>
+    <div class="seg" style="margin-top:8px;flex-wrap:wrap">${[['','Alle'],...data.geschaefte.map(g=>[g.id,g.name])].map(([id,n])=>`<button data-cs="${id}" class="${catShop===id?'on':''}" style="flex:0 1 auto;padding:7px 10px;font-size:13px">${esc(n)}</button>`).join('')}</div>
+    <p class="hint" style="margin:4px 2px 8px">${ps.length} von ${data.katalog.length} Produkten · Tippen zum Bearbeiten</p>`;
+  for(const k of order){
+    html+=`<h2>${ICON[k]||'📦'} ${esc(k)}</h2>`;
+    html+=by[k].sort((a,b)=>a.name.localeCompare(b.name,'de')).map(p=>`<div class="crow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-ce="${p.id}">${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}<br><small>${esc(shopName(p.geschaeft))} · ${esc(unitOf(p))}${p.menge?' · '+esc(p.menge):''}${p.eans?.length?' · ▥ '+p.eans.length:''}</small></div><button data-cd="${p.id}" title="Produkt löschen">🗑</button></div>`).join('');
+  }
+  if(!ps.length) html+=`<div class="empty">Nichts gefunden.</div>`;
+  html+=`<button class="btn sec" id="cNew">＋ Produkt anlegen</button>`;
+  $('#main').innerHTML=html;
+  $('#cBack').onclick=()=>{view='info';render()};
+  const inp=$('#cQ'); inp.oninput=()=>{catQ=inp.value;render();const n=$('#cQ');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
+  $('#main').querySelectorAll('[data-cs]').forEach(b=>b.onclick=()=>{catShop=b.dataset.cs;render()});
+  $('#main').querySelectorAll('[data-ce]').forEach(b=>b.onclick=()=>editProduct(b.dataset.ce));
+  $('#main').querySelectorAll('[data-cd]').forEach(b=>b.onclick=()=>{
+    const id=b.dataset.cd, p=prod(id), on=data.liste.some(l=>l.id===id);
+    if(!confirm(`„${label(p)}“ aus dem Katalog löschen?`+(on?'\nDer Eintrag auf der Einkaufsliste wird ebenfalls entfernt.':'')))return;
+    change('Gelöscht: '+label(p),d=>{d.katalog=d.katalog.filter(x=>x.id!==id);d.liste=d.liste.filter(l=>l.id!==id);for(const r of Object.values(d.reihenfolge||{}))delete r[id]});
+  });
+  $('#cNew').onclick=()=>newProduct(false);
+}
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
     <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b></p>
@@ -910,12 +947,14 @@ function renderInfo(){
     <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
     <label class="hint" style="display:block;margin:16px 0 6px">Neue Produkte</label>
     <button class="btn sec" id="iNew" style="margin-top:2px">＋ Produkt anlegen (mit Barcode)</button>
+    <button class="btn sec" id="iCat">✎ Produktkatalog bearbeiten</button>
     <button class="btn sec" id="iStats">▤ Statistik</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
     <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
     <p style="color:var(--mute);font-size:13px;margin-bottom:0">Abgehakte Einkäufe werden eine Stunde nach dem letzten Häkchen automatisch abgeschlossen.</p></div>`;
   $('#iStats').onclick=()=>{view='stats';render()};
   $('#iNew').onclick=()=>newProduct(false);
+  $('#iCat').onclick=()=>{view='catalog';catQ='';catShop='';render();scrollTo(0,0)};
 
   $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
