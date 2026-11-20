@@ -1213,7 +1213,12 @@ function renderSetup(){
   const c=cfg||{owner:'',repo:'einkaufsliste-daten',path:'liste.json',token:'',name:''};
   $('#main').innerHTML=`${inApp?`<div class="ghead"><button id="sBack">‹ Zurück</button><h3>⚙︎ Einstellungen</h3></div>`:''}
     ${inApp&&myRole==='admin'?`<div class="setup" id="family" style="margin-bottom:12px"></div>`:''}
-    <div class="setup"><h3 style="margin-top:0">${inApp?'Dieses Gerät':'Einrichtung'}</h3>
+    ${inApp?'':`<div class="setup" style="margin-bottom:12px"><h3 style="margin-top:0">Mit Einladung</h3>
+      <p style="font-size:14px;color:var(--mute);margin-top:0">Einladungslink kopiert? Dann hier einfügen – fertig.</p>
+      <button class="btn" id="sPaste">📋 Einladungslink einfügen</button>
+      <input id="sInv" placeholder="…oder Link hier hineinkopieren" autocomplete="off" autocapitalize="off" style="margin-top:8px">
+      <div class="err" id="sInvErr"></div></div>`}
+    <div class="setup"><h3 style="margin-top:0">${inApp?'Dieses Gerät':'Ohne Einladung'}</h3>
     ${inApp?`<p style="font-size:14px;margin:0 0 6px">Angemeldet als <b>${esc(cfg.name||'–')}</b></p>`:''}
     <p style="font-size:14px;color:var(--mute)">Einmal pro Gerät. Der Schlüssel bleibt nur in diesem Browser gespeichert.</p>
     <label>Dein Name</label><input id="sName" value="${esc(c.name)}" placeholder="z. B. Ingo">
@@ -1232,6 +1237,14 @@ function renderSetup(){
     try{await load();await checkDevice();localStorage.setItem(LS,JSON.stringify(cfg));shop=null;view='home';render();setStatus('Verbunden')}
     catch(e){if(e.message==='BLOCKED')return renderBlocked();const d=await diagnose();$('#sErr').textContent=e.message+'\n\n'+d;cfg=null}
   };
+  const tryInvite=async str=>{
+    const c=parseInvite(str); if(!c){$('#sInvErr').textContent=str?'Das ist kein gültiger Einladungslink.':'';return}
+    $('#sInvErr').textContent='Verbinde…'; cfg=c;
+    try{await load();await checkDevice();useInvite(c);shop=null;view='home';render()}
+    catch(e){if(e.message==='BLOCKED')return renderBlocked();cfg=null;$('#sInvErr').textContent=e.message}
+  };
+  $('#sPaste')&&($('#sPaste').onclick=async()=>{try{await tryInvite(await navigator.clipboard.readText())}catch{$('#sInvErr').textContent='Kein Zugriff auf die Zwischenablage – bitte den Link unten hineinkopieren.';$('#sInv').focus()}});
+  $('#sInv')&&($('#sInv').oninput=()=>tryInvite($('#sInv').value.trim()));
   $('#sOut')&&($('#sOut').onclick=()=>{localStorage.removeItem(LS);cfg=null;data=null;renderSetup()});
   $('#sBack')&&($('#sBack').onclick=()=>{view='info';render()});
   if(inApp&&myRole==='admin') renderFamily();
@@ -1241,16 +1254,38 @@ document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()}
 /* nur lokale Prüfung (ohne Netz), ob ein Einkauf automatisch abgeschlossen werden muss */
 setInterval(()=>{if(!document.hidden&&!busy)autoFinish()},5*60*1000);
 /* Einladungs-Link: App fertig einrichten, Schlüssel sofort aus der Adresse entfernen */
+/* iPhone/iPad: Safari und die App auf dem Home-Bildschirm haben getrennte Speicher. Deshalb wird eine Einladung
+   in Safari nicht angemeldet, sondern es gibt eine Anleitung; der Link wird danach in der App eingefügt. */
+const IOS=/iPhone|iPad|iPod/.test(navigator.userAgent)||(navigator.platform==='MacIntel'&&navigator.maxTouchPoints>1);
+const STANDALONE=navigator.standalone===true||matchMedia('(display-mode: standalone)').matches;
+function parseInvite(str){
+  const m=String(str||'').match(/invite=([A-Za-z0-9+/=_-]+)/); if(!m) return null;
+  try{const v=JSON.parse(decodeURIComponent(escape(atob(m[1]))));return v.t?{name:v.n,owner:v.o,repo:v.r,path:v.p||'liste.json',token:v.t}:null}catch{return null}
+}
+function useInvite(c){cfg=c;localStorage.setItem(LS,JSON.stringify(cfg));setTimeout(()=>setStatus('Willkommen, '+c.name+'!'),800)}
+function renderIosInstall(link,name){
+  $('#tabs').innerHTML='';
+  $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">Hallo ${esc(name)}!</h3>
+    <p style="font-size:15px">Damit die Einkaufsliste auf dem iPhone als App läuft, bitte diese drei Schritte:</p>
+    <ol style="font-size:15px;line-height:1.5;padding-left:22px">
+      <li><b>Einladungslink kopieren</b> (Knopf unten).</li>
+      <li>In Safari unten auf <b>Teilen</b> <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:-3px"><path d="M8 9H6a1 1 0 0 0-1 1v10a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V10a1 1 0 0 0-1-1h-2"/><path d="M12 15V3M8 7l4-4 4 4"/></svg> (Quadrat mit Pfeil) tippen → <b>„Zum Home-Bildschirm“</b> → <b>Hinzufügen</b>.</li>
+      <li>Die App <b>Einkauf</b> auf dem Home-Bildschirm öffnen und dort <b>„Einladungslink einfügen“</b> tippen.</li></ol>
+    <button class="btn" id="iosCopy">Einladungslink kopieren</button>
+    <p class="hint">Der Link enthält deinen persönlichen Schlüssel – bitte nicht weitergeben. Er funktioniert nur auf einem Gerät.</p></div>`;
+  $('#iosCopy').onclick=async()=>{try{await navigator.clipboard.writeText(link);setStatus('Link kopiert – jetzt „Zum Home-Bildschirm“')}catch{prompt('Bitte kopieren:',link)}};
+}
+let iosInvite=null;
 (()=>{
   const m=location.hash.match(/invite=([^&]+)/); if(!m) return;
+  const link=location.href;
   history.replaceState(null,'',location.pathname+location.search);
-  try{
-    const v=JSON.parse(decodeURIComponent(escape(atob(m[1]))));
-    cfg={name:v.n,owner:v.o,repo:v.r,path:v.p||'liste.json',token:v.t};
-    localStorage.setItem(LS,JSON.stringify(cfg)); setTimeout(()=>setStatus('Willkommen, '+v.n+'!'),800);
-  }catch{setTimeout(()=>setStatus('⚠︎ Einladungs-Code ungültig'),500)}
+  const c=parseInvite(link);
+  if(!c){setTimeout(()=>setStatus('⚠︎ Einladungs-Code ungültig'),500);return}
+  if(IOS&&!STANDALONE&&!cfg){iosInvite={link,name:c.name};return}
+  useInvite(c);
 })();
-cfg?refresh():renderSetup();
+iosInvite?renderIosInstall(iosInvite.link,iosInvite.name):cfg?refresh():renderSetup();
 if('serviceWorker' in navigator&&location.protocol==='https:')navigator.serviceWorker.register('sw.js').catch(()=>{});
 </script>
 </body>
