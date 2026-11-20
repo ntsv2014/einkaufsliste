@@ -13,7 +13,9 @@
 <title>Einkaufsliste</title>
 <style>
 :root{color-scheme:light dark;--bg:#f4f4f2;--card:#fff;--fg:#1f2937;--hdr:#1f2937;--mute:#6b7280;--line:#e5e7eb;--acc:#f5c400;--ok:#16a34a;--btn2:#e5e7eb;--stepbg:#f3f4f6;--panel:#e9ecf1;--ts:80%;--tl:89%;--onbg:#d1fae5;--onfg:#065f46;--tab:#374151;--tabfg:#d1d5db}
-@media (prefers-color-scheme:dark){:root{--bg:#0f1115;--card:#1b1f27;--fg:#e5e7eb;--hdr:#05070a;--mute:#9ca3af;--line:#2d333d;--btn2:#2d333d;--stepbg:#262b34;--panel:#151920;--ts:38%;--tl:24%;--onbg:#064e3b;--onfg:#a7f3d0;--tab:#1b1f27;--tabfg:#9ca3af}}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#0f1115;--card:#1b1f27;--fg:#e5e7eb;--hdr:#05070a;--mute:#9ca3af;--line:#2d333d;--btn2:#2d333d;--stepbg:#262b34;--panel:#151920;--ts:38%;--tl:24%;--onbg:#064e3b;--onfg:#a7f3d0;--tab:#1b1f27;--tabfg:#9ca3af}}
+:root[data-theme=dark]{color-scheme:dark;--bg:#0f1115;--card:#1b1f27;--fg:#e5e7eb;--hdr:#05070a;--mute:#9ca3af;--line:#2d333d;--btn2:#2d333d;--stepbg:#262b34;--panel:#151920;--ts:38%;--tl:24%;--onbg:#064e3b;--onfg:#a7f3d0;--tab:#1b1f27;--tabfg:#9ca3af}
+:root[data-theme=light]{color-scheme:light}
 button,input,select{color:var(--fg);font-family:inherit}
 input,select{background:var(--card)}
 *{box-sizing:border-box}
@@ -81,7 +83,8 @@ dialog label{font-size:13px;color:var(--mute)}
 .send{border:0;border-radius:10px;height:40px;padding:0 10px;font-size:14px;font-weight:700;color:#fff;flex:none;min-width:74px}
 .send.edeka{background:#d4a800;color:#111}.send.budni{background:#1b3f8b}.send.tibarg{background:#0e7490}.send.baumarkt{background:#c2410c}.send.sonstiges{background:#6b7280}.send.none{background:#9ca3af;color:#111}
 .send.upd{outline:3px solid #16a34a55}
-.add .scanb{flex:none;border:0;border-radius:10px;background:var(--hdr);color:#fff;font-size:22px;width:52px}
+.add .scanb{flex:none;border:0;border-radius:10px;background:var(--hdr);color:#fff;width:52px;display:grid;place-items:center}
+#fScan svg{vertical-align:-4px;margin-right:4px}
 dialog.scan{padding:0;width:100vw;max-width:100vw;height:100dvh;max-height:100dvh;margin:0;border-radius:0;background:#000;color:#fff}
 dialog.scan video{width:100%;height:100%;object-fit:cover}
 .scanFrame{position:fixed;left:8%;right:8%;top:35%;height:22%;border:3px solid #f7c600;border-radius:14px;box-shadow:0 0 0 100vmax rgba(0,0,0,.45);pointer-events:none}
@@ -99,6 +102,11 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 .prow .hits{flex:none;min-width:18px;font-size:12px;font-weight:700;color:var(--mute);text-align:center}
 .stats div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
 .item.tint,.prow.tint{background:hsl(var(--h) var(--ts) var(--tl))}
+.scard{background:var(--panel);border-radius:12px;padding:8px;margin-bottom:10px}
+.shead{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;font-size:16px}
+.shead .cnt{min-width:20px;padding:0 6px;border-radius:10px;background:var(--acc);color:#111;font-size:12px;text-align:center}
+.shead .del{border:0;background:none;font-size:18px;padding:2px 6px;opacity:.75}
+.send{background:#7c3aed}
 </style>
 </head>
 <body>
@@ -126,7 +134,7 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
       <div style="flex:1"><label>Packungsgröße (optional)</label><input id="fMenge" placeholder="z. B. 500 g"></div>
     </div>
     <datalist id="kats"></datalist>
-    <button type="button" class="btn sec" id="fScan" hidden>📷 Barcode diesem Produkt zuordnen</button>
+    <button type="button" class="btn sec" id="fScan" hidden>Barcode diesem Produkt zuordnen</button>
     <div class="row"><button class="btn sec" value="cancel" type="button" id="fCancel">Abbrechen</button><button class="btn" value="ok" id="fOk">Hinzufügen</button></div>
   </form>
 </dialog>
@@ -145,9 +153,17 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 
 <script>
 "use strict";
+/* App-Design: auto (wie Handy) / hell / dunkel – pro Gerät gespeichert */
+const THEME_KEY='einkauf.theme';
+function applyTheme(t){
+  if(t==='light'||t==='dark') document.documentElement.dataset.theme=t; else delete document.documentElement.dataset.theme;
+  const dark=t==='dark'||(t!=='light'&&matchMedia('(prefers-color-scheme: dark)').matches);
+  document.querySelectorAll('meta[name=theme-color]').forEach(m=>{m.content=dark?'#05070a':'#1f2937';m.removeAttribute('media')});
+}
+applyTheme(localStorage.getItem(THEME_KEY)||'auto');
 const LS='einkauf.cfg';
 let cfg=JSON.parse(localStorage.getItem(LS)||'null');
-let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null, panel=null; const cnt={};
+let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null, panel=null, xq=null, addingShop=false, newShopDefault=''; const cnt={};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
@@ -188,9 +204,13 @@ async function load(){
   const j=await r.json(); sha=j.sha; data=JSON.parse(b64dec(j.content));
   data.liste??=[]; data.historie??=[];
   /* fehlende Geschäfte ergänzen, feste Reihenfolge */
-  const DEF=[['edeka','Edeka'],['budni','Budni'],['tibarg','Tibarg'],['baumarkt','Baumarkt'],['sonstiges','Sonstiges']];
-  for(const [id,name] of DEF) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
-  data.geschaefte.sort((a,b)=>DEF.findIndex(x=>x[0]===a.id)-DEF.findIndex(x=>x[0]===b.id));
+  for(const [id,name] of [['edeka','Edeka'],['budni','Budni'],['tibarg','Tibarg']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
+  /* weitere Geschäfte nur einmal anlegen – danach entscheidet die Familie über + und Papierkorb */
+  if(!data.weitereAngelegt){
+    for(const [id,name] of [['baumarkt','Baumarkt'],['sonstiges','Sonstiges']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
+    data.weitereAngelegt=true;
+  }
+  data.geschaefte.sort((a,b)=>{const i=x=>{const k=CORE.indexOf(x.id);return k<0?99:k};return i(a)-i(b)});
 }
 async function save(msg){
   const r=await fetch(api(),{method:'PUT',headers:hdr(),body:JSON.stringify({message:msg+' ('+(cfg.name||'?')+')',content:b64enc(JSON.stringify(data,null,1)),sha})});
@@ -263,15 +283,15 @@ function finish(s=shop,auto=false){
 const AUTO_MS=60*60*1000;
 async function autoFinish(){
   if(!data) return;
-  for(const s of SHOPS){
+  for(const s of SHOPS()){
     const done=shopItems(s).filter(l=>l.erledigt); if(!done.length) continue;
     const last=Math.max(...done.map(l=>l.um||0));
     if(Date.now()-last>AUTO_MS){await finish(s,true);setStatus(`Einkauf ${shopName(s)} automatisch abgeschlossen`)}
   }
 }
 function newProduct(){
-  const defShop=view==='shop'?shop:'';
-  $('#fShop').innerHTML=`<option value="">– bitte wählen –</option>`+data.geschaefte.filter(g=>SHOPS.includes(g.id)).map(g=>`<option value="${g.id}" ${g.id===defShop?'selected':''}>${esc(g.name)}</option>`).join('');
+  const defShop=newShopDefault||(view==='shop'?shop:''); newShopDefault='';
+  $('#fShop').innerHTML=`<option value="">– bitte wählen –</option>`+data.geschaefte.filter(g=>SHOPS().includes(g.id)).map(g=>`<option value="${g.id}" ${g.id===defShop?'selected':''}>${esc(g.name)}</option>`).join('');
   $('#kats').innerHTML=[...new Set(data.katalog.map(p=>p.kategorie))].map(k=>`<option value="${esc(k)}">`).join('');
   $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';$('#fMenge').value='';
   $('#fEinh').innerHTML=Object.keys(EINH).map(u=>`<option>${u}</option>`).join('');$('#fEinh').value='Stück';
@@ -285,9 +305,9 @@ function editProduct(id){
   newProduct();
   editId=id;$('#dlgT').textContent='Artikel bearbeiten';$('#fOk').textContent='Speichern';
   $('#fName').value=p.name;$('#fMarke').value=p.marke||'';$('#fKat').value=p.kategorie;$('#fMenge').value=p.menge||'';
-  $('#fEinh').value=unitOf(p);$('#fShop').value=SHOPS.includes(p.geschaeft)?p.geschaeft:'';
+  $('#fEinh').value=unitOf(p);$('#fShop').value=SHOPS().includes(p.geschaeft)?p.geschaeft:'';
   $('#fScan').hidden=false;
-  $('#fScan').textContent=(p.eans?.length?`📷 Weiteren Barcode zuordnen (${p.eans.length} gespeichert)`:'📷 Barcode diesem Produkt zuordnen');
+  $('#fScan').innerHTML=BC_ICON+' '+(p.eans?.length?`Weiteren Barcode zuordnen (${p.eans.length} gespeichert)`:'Barcode diesem Produkt zuordnen');
 }
 $('#fScan').onclick=async()=>{
   const id=editId; $('#dlg').close();
@@ -316,7 +336,9 @@ $('#dlgForm').onsubmit=e=>{
 
 /* ---------- Produktgruppen ---------- */
 const ICON={'Eier':'🥚','Getränke':'🥤','Obst & Gemüse':'🥦','Fleisch':'🥩','Wurst':'🌭','Käse':'🧀','Müsli & Frühstück':'🥣','Tomatensauce & Saucen':'🍅','Kühlprodukte':'🧈','Nudeln & Reis':'🍝','Konserven':'🥫','Tiefkühl':'🧊','Backen':'🧁','Vorrat':'🫒','Brot':'🥖','Süßes & Snacks':'🍫','Tee':'🍵','Haushalt':'🧻','Putzmittel':'🧽','Wäsche':'🧺','Körperpflege':'🧴','Haare':'💇','Gesicht':'🧖','Kosmetik':'💄','Zahnpflege':'🪥','Herren':'🪒'};
-const SHOPS=['edeka','budni','tibarg','baumarkt','sonstiges'];
+const CORE=['edeka','budni','tibarg'];
+const SHOPS=()=>data.geschaefte.map(g=>g.id);
+const EXTRAS=()=>data.geschaefte.filter(g=>!CORE.includes(g.id));
 const shopName=id=>data.geschaefte.find(g=>g.id===id)?.name||'?';
 /* blasse Hintergrundfarbe je Produktgruppe (Farbton) */
 const HUE={'Eier':48,'Getränke':205,'Obst & Gemüse':112,'Fleisch':0,'Wurst':22,'Käse':56,'Müsli & Frühstück':34,'Tomatensauce & Saucen':345,'Kühlprodukte':190,'Nudeln & Reis':70,'Konserven':160,'Tiefkühl':222,'Backen':300,'Vorrat':88,'Brot':28,'Süßes & Snacks':322,'Tee':140,'Haushalt':262,'Putzmittel':176,'Wäsche':240,'Körperpflege':282,'Haare':332,'Gesicht':12,'Kosmetik':310,'Zahnpflege':186,'Herren':232};
@@ -368,7 +390,7 @@ function setOnList(id,n){
 function askShop(p){
   return new Promise(res=>{
     const dl=$('#dShop'); $('#dShopTxt').textContent=label(p);
-    $('#dShopBtns').innerHTML=SHOPS.map(id=>`<button class="send ${id}" data-shop="${id}">${esc(shopName(id))}</button>`).join('');
+    $('#dShopBtns').innerHTML=SHOPS().map(id=>`<button class="send ${id}" data-shop="${id}">${esc(shopName(id))}</button>`).join('');
     dl.querySelectorAll('[data-shop]').forEach(b=>b.onclick=()=>{dl.close();res(b.dataset.shop)});
     $('#dShopX').onclick=()=>{dl.close();res(null)};
     dl.showModal();
@@ -376,7 +398,7 @@ function askShop(p){
 }
 async function send(id){
   const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||suggest(id));
-  if(!SHOPS.includes(p.geschaeft)){
+  if(!SHOPS().includes(p.geschaeft)){
     const s=await askShop(p); if(!s) return;
     await change(`${label(p)} → ${s}`,d=>{const x=d.katalog.find(x=>x.id===id);if(x){x.geschaeft=s;delete x.auchBei}});
   }
@@ -384,7 +406,7 @@ async function send(id){
 }
 function renderHome(){
   const on={}; for(const l of data.liste) if(!l.erledigt){const k=prod(l.id)?.kategorie;if(k)on[k]=(on[k]||0)+1}
-  let html=`<div class="add"><input id="q" placeholder="Alle Produkte durchsuchen…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">📷</button></div>`;
+  let html=`<div class="add"><input id="q" placeholder="Alle Produkte durchsuchen…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">${BC_ICON}</button></div>`;
   if(query){
     const q=query.toLowerCase(), f=freq();
     const hits=data.katalog.filter(p=>label(p).toLowerCase().includes(q)).sort((a,b)=>(f[b.id]||0)-(f[a.id]||0)).slice(0,25);
@@ -397,7 +419,7 @@ function renderHome(){
   $('#main').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{group=b.dataset.g;view='group';render();scrollTo(0,0)});
 }
 function prow(p){
-  const e=openEntry(p.id), n=cnt[p.id]??(e?.anzahl||suggest(p.id)), sh=SHOPS.includes(p.geschaeft)?p.geschaeft:'none';
+  const e=openEntry(p.id), n=cnt[p.id]??(e?.anzahl||suggest(p.id)), sh=SHOPS().includes(p.geschaeft)?p.geschaeft:'none';
   const sn=sh==='none'?'?':shopName(sh);
   const changed=e&&n!==e.anzahl;
   return `<div class="prow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-edit="${p.id}">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small>
@@ -431,6 +453,7 @@ function renderGroup(){
 
 /* ---------- Barcode ---------- */
 let scanEan=null;
+const BC_ICON='<svg viewBox="0 0 28 20" width="28" height="20" fill="currentColor" aria-hidden="true"><rect x="1" y="1" width="2" height="18"/><rect x="5" y="1" width="1" height="18"/><rect x="8" y="1" width="3" height="18"/><rect x="13" y="1" width="1" height="18"/><rect x="16" y="1" width="2" height="18"/><rect x="20" y="1" width="1" height="18"/><rect x="23" y="1" width="1.5" height="18"/><rect x="26" y="1" width="1" height="18"/></svg>';
 const loadScript=src=>new Promise((ok,no)=>{if(window.ZXing)return ok();const s=document.createElement('script');s.src=src;s.onload=ok;s.onerror=()=>no(new Error('Scanner konnte nicht geladen werden'));document.head.appendChild(s)});
 function scanBarcode(){
   const dl=$('#dScan'), v=$('#scanV'), txt=$('#scanTxt');
@@ -521,30 +544,88 @@ async function onScan(){
 /* ---------- Ansicht ---------- */
 function renderTabs(){
   $('#bHome').classList.toggle('on',view==='home'||view==='group');
-  $('#tabs').innerHTML=data.geschaefte.filter(g=>SHOPS.includes(g.id)).map(g=>{
-    const n=shopItems(g.id).filter(l=>!l.erledigt).length;
-    return `<button data-s="${g.id}" class="${view==='shop'&&g.id===shop?'on':''}">${esc(g.id==='sonstiges'?'Sonst.':g.name)}${n?`<span class="n">${n}</span>`:''}</button>`}).join('')
-    +`<button data-s="" class="info ${view==='info'||view==='stats'?'on':''}" title="Info">ⓘ</button>`;
-  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.s?'shop':'info',b.dataset.s));
+  const badge=n=>n?`<span class="n">${n}</span>`:'';
+  const open=id=>shopItems(id).filter(l=>!l.erledigt).length;
+  $('#tabs').innerHTML=CORE.map(id=>`<button data-v="shop" data-s="${id}" class="${view==='shop'&&id===shop?'on':''}">${esc(shopName(id))}${badge(open(id))}</button>`).join('')
+    +`<button data-v="extra" class="${view==='extra'?'on':''}">Sonstige${badge(EXTRAS().reduce((a,g)=>a+open(g.id),0))}</button>`
+    +`<button data-v="info" class="info ${view==='info'||view==='stats'?'on':''}" title="Info">ⓘ</button>`;
+  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.v,b.dataset.s));
   const on=$('#tabs .on'); on&&on.scrollIntoView({inline:'nearest',block:'nearest'});
 }
-function go(v,s){query='';panel=null;view=v;if(s)shop=s;render();scrollTo(0,0);refresh()}
+function go(v,s){query='';panel=null;xq=null;addingShop=false;view=v;if(s)shop=s;render();scrollTo(0,0);refresh()}
 $('#bHome').onclick=()=>go('home');
+function listRow(l){const p=prod(l.id);return `<div class="item tint ${l.erledigt?'done':''}" style="--h:${hueOf(p.kategorie)}" data-t="${l.id}"><span class="box">${l.erledigt?'✓':''}</span>
+        <span class="t"><span class="qty">${fmtQ(p,l.anzahl||1)}</span> ${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}</span>
+        <button class="x" data-x="${l.id}">✕</button></div>`}
+function bindList(){
+  const m=$('#main');
+  m.querySelectorAll('[data-t]').forEach(e=>e.onclick=ev=>{if(!ev.target.closest('[data-x]'))toggle(e.dataset.t)});
+  m.querySelectorAll('[data-x]').forEach(e=>e.onclick=()=>remove(e.dataset.x));
+}
+/* ---------- Tab „Sonstige“: weitere Geschäfte als Karten ---------- */
+function renderExtras(){
+  let html='';
+  for(const g of EXTRAS()){
+    const items=shopItems(g.id);
+    const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,g.id,prod(a.id))-rankOf(data,g.id,prod(b.id)));
+    const done=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
+    html+=`<div class="scard"><div class="shead"><b>${esc(g.name)}</b>${open.length?`<span class="cnt">${open.length}</span>`:''}<span style="flex:1"></span><button class="del" data-del="${g.id}" title="Geschäft löschen">🗑</button></div>
+      ${open.map(listRow).join('')}${done.map(listRow).join('')}
+      ${done.length?`<button class="btn" data-fin="${g.id}" style="margin-top:6px;padding:10px">Einkauf abschließen (${done.length})</button>`:''}
+      <div class="add" style="margin-top:6px"><input data-xq="${g.id}" placeholder="Artikel hinzufügen…" autocomplete="off" value="${xq?.id===g.id?esc(xq.text):''}"></div>`;
+    if(xq?.id===g.id&&xq.text){
+      const q=xq.text.toLowerCase(), f=freq();
+      const hits=data.katalog.filter(p=>label(p).toLowerCase().includes(q)).sort((a,b)=>((b.geschaeft===g.id)-(a.geschaeft===g.id))||((f[b.id]||0)-(f[a.id]||0))).slice(0,8);
+      html+=`<div style="margin-top:6px">${hits.map(prow).join('')}<button class="btn sec" data-xnew="${g.id}" style="margin-top:4px;padding:10px">＋ „${esc(xq.text)}“ neu für ${esc(g.name)}</button></div>`;
+    }
+    html+=`</div>`;
+  }
+  if(!EXTRAS().length) html+=`<div class="empty">Noch keine weiteren Geschäfte.</div>`;
+  html+=addingShop?`<div class="scard"><div class="add"><input id="newShop" placeholder="Name des Geschäfts" autocomplete="off"><button class="scanb" id="newShopOk" title="Anlegen" style="font-size:20px">✓</button></div><button class="btn sec" id="newShopX" style="padding:10px;margin-top:6px">Abbrechen</button></div>`
+    :`<button class="btn sec" id="addShop">＋ Geschäft hinzufügen</button>`;
+  $('#main').innerHTML=html;
+  bindList(); bindRows();
+  const m=$('#main');
+  m.querySelectorAll('[data-fin]').forEach(b=>b.onclick=()=>finish(b.dataset.fin));
+  m.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteShop(b.dataset.del));
+  m.querySelectorAll('[data-xnew]').forEach(b=>b.onclick=()=>{newShopDefault=b.dataset.xnew;query=xq.text;newProduct();query='';xq=null});
+  m.querySelectorAll('[data-xq]').forEach(inp=>inp.oninput=()=>{xq={id:inp.dataset.xq,text:inp.value};render();const n=$(`[data-xq="${inp.dataset.xq}"]`);n.focus();n.setSelectionRange(n.value.length,n.value.length)});
+  $('#addShop')&&($('#addShop').onclick=()=>{addingShop=true;render();$('#newShop').focus()});
+  $('#newShopX')&&($('#newShopX').onclick=()=>{addingShop=false;render()});
+  const mk=()=>{const name=$('#newShop').value.trim();if(!name)return;addingShop=false;
+    const id=name.toLowerCase().normalize('NFD').replace(/[^a-z0-9]+/g,'-').replace(/^-|-$/g,'').slice(0,20)+'-'+Date.now().toString(36).slice(-4);
+    change('Neues Geschäft: '+name,d=>{if(!d.geschaefte.some(g=>g.id===id))d.geschaefte.push({id,name})})};
+  $('#newShopOk')&&($('#newShopOk').onclick=mk);
+  $('#newShop')&&($('#newShop').onkeydown=e=>{if(e.key==='Enter')mk()});
+}
+function deleteShop(id){
+  const n=data.katalog.filter(p=>p.geschaeft===id).length, open=shopItems(id).length;
+  const msg=`Geschäft „${shopName(id)}“ löschen?`+(open?`\n${open} Einträge auf der Liste werden entfernt.`:'')+(n?`\n${n} Produkte verlieren ihre Zuordnung (die App fragt dann beim nächsten Mal nach dem Geschäft).`:'');
+  if(!confirm(msg)) return;
+  change('Geschäft gelöscht: '+shopName(id),d=>{
+    const ids=new Set(d.katalog.filter(p=>p.geschaeft===id).map(p=>p.id));
+    d.liste=d.liste.filter(l=>!ids.has(l.id));
+    for(const p of d.katalog) if(p.geschaeft===id) p.geschaeft='';
+    d.geschaefte=d.geschaefte.filter(g=>g.id!==id);
+    if(d.reihenfolge) delete d.reihenfolge[id];
+  });
+}
 function render(){
   if(!cfg){renderSetup();return}
   if(!data) return;
-  shop??=data.geschaefte[0].id;
+  if(!shop||!CORE.includes(shop)) shop='edeka';
   renderTabs();
   if(view==='home') return renderHome();
   if(view==='group') return renderGroup();
   if(view==='info') return renderInfo();
+  if(view==='extra') return renderExtras();
   if(view==='stats') return renderStats();
   const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
   const cand=data.katalog.filter(p=>p.geschaeft===shop||p.auchBei===shop);
   const score=p=>(f[p.id]||0)*10+(p.favorit?5:0);
   let html=`<div class="seg"><button id="pSearch" class="${panel==='search'?'on':''}">🔍 Suchen / Neu</button><button id="pTop" class="${panel==='top'?'on':''}">⭐ Top-Hits</button></div>`;
   if(panel==='search'){
-    html+=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">📷</button></div>`;
+    html+=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">${BC_ICON}</button></div>`;
     if(query){
       const q=query.toLowerCase();
       const hits=cand.filter(p=>label(p).toLowerCase().includes(q)||p.kategorie.toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a)).slice(0,12);
@@ -559,9 +640,7 @@ function render(){
   }
   const items=shopItems(shop);
   if(!items.length) html+=`<div class="empty">Nichts auf der Liste 🎉</div>`;
-  const row=l=>{const p=prod(l.id);return `<div class="item tint ${l.erledigt?'done':''}" style="--h:${hueOf(p.kategorie)}" data-t="${l.id}"><span class="box">${l.erledigt?'✓':''}</span>
-        <span class="t"><span class="qty">${fmtQ(p,l.anzahl||1)}</span> ${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}</span>
-        <button class="x" data-x="${l.id}">✕</button></div>`};
+  const row=listRow;
   const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,shop,prod(a.id))-rankOf(data,shop,prod(b.id)));
   const inCart=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
   for(const l of open) html+=row(l);
@@ -570,8 +649,7 @@ function render(){
   $('#main').innerHTML=html;
   bindSearch();
   $('#main').querySelectorAll('[data-add]').forEach(e=>e.onclick=()=>addItem(e.dataset.add));
-  $('#main').querySelectorAll('[data-t]').forEach(e=>e.onclick=ev=>{if(!ev.target.dataset.x)toggle(e.dataset.t)});
-  $('#main').querySelectorAll('[data-x]').forEach(e=>e.onclick=()=>remove(e.dataset.x));
+  bindList();
   $('#fin')&&($('#fin').onclick=()=>finish(shop));
   bindRows();
   $('#pSearch').onclick=()=>{panel=panel==='search'?null:'search';query='';render();if(panel==='search')$('#q').focus()};
@@ -581,11 +659,14 @@ function render(){
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
     <p style="color:var(--mute);font-size:14px;margin-top:0">Verbunden als <b>${esc(cfg.name||'–')}</b> · ${esc(cfg.owner)}/${esc(cfg.repo)}<br>${data.katalog.length} Produkte · ${data.liste.filter(l=>!l.erledigt).length} offen auf den Listen · ${data.historie.length} Käufe erfasst</p>
+    <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
+    <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
     <button class="btn sec" id="iStats">📊 Kaufhäufigkeit</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
     <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
     <p style="color:var(--mute);font-size:13px;margin-bottom:0">Abgehakte Einkäufe werden eine Stunde nach dem letzten Häkchen automatisch abgeschlossen.</p></div>`;
   $('#iStats').onclick=()=>{view='stats';render()};
+  $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=renderSetup;
 }
