@@ -150,6 +150,9 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 #fScanNew svg{vertical-align:-4px;margin-right:4px}
 .newp{display:block;width:100%;text-align:left;border:0;border-radius:8px;background:var(--stepbg);padding:7px 10px;margin-bottom:4px;font-size:14px}
 .newp small{color:var(--mute)}
+.dlghead{display:flex;align-items:center;gap:10px;margin-bottom:10px}
+.dlghead h3{margin:0;flex:1}
+.bcbtn{flex:none;border:0;border-radius:10px;background:var(--hdr);color:#fff;width:48px;height:40px;display:grid;place-items:center}
 </style>
 </head>
 <body>
@@ -160,7 +163,7 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 
 <dialog id="dlg">
   <form method="dialog" id="dlgForm">
-    <h3 style="margin-top:0" id="dlgT">Neuer Artikel</h3>
+    <div class="dlghead"><h3 id="dlgT">Neuer Artikel</h3><button type="button" class="bcbtn" id="fScanNew" title="Barcode scannen" hidden></button></div>
     <div id="fAssBox" hidden>
       <small id="fEanTxt"></small>
       <label>Einem vorhandenen Produkt zuordnen – antippen:</label>
@@ -180,7 +183,6 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
     </div>
     <datalist id="kats"></datalist>
     <button type="button" class="btn sec" id="fScan" hidden>Barcode diesem Produkt zuordnen</button>
-    <button type="button" class="btn sec" id="fScanNew" hidden>Barcode scannen</button>
     <label class="chk" id="fToListL"><input type="checkbox" id="fToList"> Gleich auf die Einkaufsliste setzen</label>
     <div class="row"><button class="btn sec" value="cancel" type="button" id="fCancel">Abbrechen</button><button class="btn" value="ok" id="fOk">Hinzufügen</button></div>
   </form>
@@ -402,7 +404,7 @@ function newProduct(toList=true){
   $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';$('#fMenge').value='';
   $('#fEinh').innerHTML=Object.keys(EINH).map(u=>`<option>${u}</option>`).join('');$('#fEinh').value='Stück';
   editId=null;scanEan=null;$('#dlgT').textContent='Neuer Artikel';$('#fOk').textContent=toList?'Hinzufügen':'Anlegen';$('#fAssBox').hidden=true;$('#fScan').hidden=true;
-  $('#fScanNew').hidden=false;$('#fScanNew').innerHTML=BC_ICON+' Barcode scannen';$('#fToListL').hidden=false;$('#fToList').checked=toList;
+  $('#fScanNew').hidden=false;$('#fScanNew').innerHTML=BC_ICON;$('#fToListL').hidden=false;$('#fToList').checked=toList;
   $('#dlg').showModal();
 }
 $('#fCancel').onclick=()=>$('#dlg').close();
@@ -907,7 +909,6 @@ function renderInfo(){
     <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
     <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
     <label class="hint" style="display:block;margin:16px 0 6px">Neue Produkte</label>
-    ${data.katalog.filter(p=>p.angelegt).sort((a,b)=>b.angelegt.localeCompare(a.angelegt)||b.id.localeCompare(a.id)).slice(0,6).map(p=>`<button class="newp" data-np="${p.id}">${esc(label(p))} <small>· ${esc(p.kategorie)} · ${esc(shopName(p.geschaeft))} · ${p.angelegt.split('-').reverse().join('.')}${p.eans?.length?' · Barcode ✓':''}</small></button>`).join('')}
     <button class="btn sec" id="iNew" style="margin-top:2px">＋ Produkt anlegen (mit Barcode)</button>
     <button class="btn sec" id="iStats">▤ Statistik</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
@@ -915,7 +916,7 @@ function renderInfo(){
     <p style="color:var(--mute);font-size:13px;margin-bottom:0">Abgehakte Einkäufe werden eine Stunde nach dem letzten Häkchen automatisch abgeschlossen.</p></div>`;
   $('#iStats').onclick=()=>{view='stats';render()};
   $('#iNew').onclick=()=>newProduct(false);
-  $('#main').querySelectorAll('[data-np]').forEach(b=>b.onclick=()=>editProduct(b.dataset.np));
+
   $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=()=>{view='setup';render()};
