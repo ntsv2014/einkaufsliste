@@ -1056,21 +1056,17 @@ function renderCatalog(){
 }
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
-    <p style="color:var(--mute);font-size:14px;margin-top:0">Angemeldet als <b>${esc(cfg.name||'–')}</b></p>
-    <label style="display:block;font-size:13px;color:var(--mute);margin:4px 0 6px">App-Design</label>
-    <div class="seg" id="iTheme">${[['auto','🌗 Automatisch'],['light','☀️ Hell'],['dark','🌙 Dunkel']].map(([k,t])=>`<button data-th="${k}" class="${(localStorage.getItem(THEME_KEY)||'auto')===k?'on':''}">${t}</button>`).join('')}</div>
-    <label class="hint" style="display:block;margin:16px 0 6px">Neue Produkte</label>
-    <button class="btn sec" id="iNew" style="margin-top:2px">＋ Produkt anlegen (mit Barcode)</button>
+    <button class="btn sec" id="iTheme">${{auto:'🌗 Design: Automatisch',light:'☀️ Design: Hell',dark:'🌙 Design: Dunkel'}[localStorage.getItem(THEME_KEY)||'auto']}</button>
+    <button class="btn sec" id="iNew">＋ Produkt anlegen (mit Barcode)</button>
     <button class="btn sec" id="iCat">✎ Produktkatalog bearbeiten</button>
     <button class="btn sec" id="iStats">▤ Statistik</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
-    <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
-    <p style="color:var(--mute);font-size:13px;margin-bottom:0">Abgehakte Einkäufe werden eine Stunde nach dem letzten Häkchen automatisch abgeschlossen.</p></div>`;
+    <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button></div>`;
   $('#iStats').onclick=()=>{view='stats';render()};
   $('#iNew').onclick=()=>newProduct(false);
   $('#iCat').onclick=()=>{view='catalog';catQ='';catShop='';render();scrollTo(0,0)};
 
-  $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
+  $('#iTheme').onclick=()=>{const n={auto:'light',light:'dark',dark:'auto'}[localStorage.getItem(THEME_KEY)||'auto'];localStorage.setItem(THEME_KEY,n);applyTheme(n);render()};
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
   $('#iCfg').onclick=()=>{view='setup';render()};
 
@@ -1167,6 +1163,7 @@ function renderSetup(){
   $('#main').innerHTML=`${inApp?`<div class="ghead"><button id="sBack">‹ Zurück</button><h3>⚙︎ Einstellungen</h3></div>`:''}
     ${inApp&&myRole==='admin'?`<div class="setup" id="family" style="margin-bottom:12px"></div>`:''}
     <div class="setup"><h3 style="margin-top:0">${inApp?'Dieses Gerät':'Einrichtung'}</h3>
+    ${inApp?`<p style="font-size:14px;margin:0 0 6px">Angemeldet als <b>${esc(cfg.name||'–')}</b></p>`:''}
     <p style="font-size:14px;color:var(--mute)">Einmal pro Gerät. Der Schlüssel bleibt nur in diesem Browser gespeichert.</p>
     <label>Dein Name</label><input id="sName" value="${esc(c.name)}" placeholder="z. B. Ingo">
     <label>GitHub-Benutzer / Organisation</label><input id="sOwner" value="${esc(c.owner)}" autocapitalize="off">
