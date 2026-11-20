@@ -118,7 +118,15 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 .scard{background:var(--panel);border-radius:12px;padding:8px;margin-bottom:10px}
 .shead{display:flex;align-items:center;gap:8px;padding:2px 4px 8px;font-size:16px}
 .shead .cnt{min-width:20px;padding:0 6px;border-radius:10px;background:var(--acc);color:#111;font-size:12px;text-align:center}
-.shead .del{border:0;background:none;font-size:18px;padding:2px 6px;opacity:.75}
+.shead .del{border:0;background:none;font-size:18px;padding:2px 6px;opacity:.75;color:var(--fg)}
+.shead[data-ox],.shead[data-nz]{cursor:pointer;padding-bottom:2px}
+.scard.open .shead,.scard.note .shead{padding-bottom:8px}
+.shead .chev{width:14px;color:var(--mute);font-size:14px}
+.shead .ydot{width:9px;height:9px;border-radius:50%;background:var(--acc)}
+.scard .sbody{padding:0 2px 2px}
+.nbody{white-space:pre-wrap;padding:2px 6px 6px;font-size:15px;line-height:1.4}
+.scard.note input,.scard.note textarea{width:100%;font:inherit;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;background:var(--bg);color:var(--fg);margin-bottom:8px;box-sizing:border-box}
+.scard.note #nT{font-weight:600}
 .send{background:#7c3aed}
 nav button{position:relative}
 nav .tl{display:inline-grid;place-items:center;width:28px;height:24px;border-radius:6px;font-weight:900;font-size:19px;line-height:1;font-family:Arial Black,Arial,sans-serif}
@@ -248,7 +256,7 @@ function applyTheme(t){
 applyTheme(localStorage.getItem(THEME_KEY)||'auto');
 const LS='einkauf.cfg';
 let cfg=JSON.parse(localStorage.getItem(LS)||'null');
-let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null, panel=null, xq=null, addingShop=false, newShopDefault=''; const cnt={};
+let openX=null, editNote=null; let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null, panel=null, xq=null, addingShop=false, newShopDefault=''; const cnt={};
 const $=s=>document.querySelector(s);
 const sleep=ms=>new Promise(r=>setTimeout(r,ms));
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
@@ -288,9 +296,9 @@ async function load(){
   const r=await fetch(api()+'?t='+Date.now(),{headers:hdr()});
   if(!r.ok) throw new Error(r.status===401?'Token ungültig':r.status===404?'Repo oder Datei nicht gefunden':'Fehler '+r.status);
   const j=await r.json(); sha=j.sha; data=JSON.parse(b64dec(j.content));
-  data.liste??=[]; data.historie??=[]; mergeDupes(data);
+  data.liste??=[]; data.historie??=[]; data.notizen??=[]; mergeDupes(data);
   /* fehlende Geschäfte ergänzen, feste Reihenfolge */
-  for(const [id,name] of [['edeka','Edeka'],['budni','Budni'],['tibarg','Tibarg']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
+  for(const [id,name] of [['edeka','Edeka'],['budni','Budni']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
   /* weitere Geschäfte nur einmal anlegen – danach entscheidet die Familie über + und Papierkorb */
   if(!data.weitereAngelegt){
     for(const [id,name] of [['baumarkt','Baumarkt'],['sonstiges','Sonstiges']]) if(!data.geschaefte.some(g=>g.id===id)) data.geschaefte.push({id,name});
@@ -363,7 +371,7 @@ async function pruneCatalog(){
 }
 async function refresh(){
   if(busy||!cfg||Date.now()-lastSave<5000) return;
-  try{await load();await checkDevice();if(!document.querySelector('dialog[open]'))render();await autoFinish();await pruneCatalog()}
+  try{await load();await checkDevice();if(!document.querySelector('dialog[open]')&&!editNote&&!document.activeElement?.matches?.('input,textarea'))render();await autoFinish();await pruneCatalog()}
   catch(e){if(e.message==='BLOCKED')return renderBlocked();setStatus('⚠︎ '+e.message)}
 }
 /* ---------- Geräte: Schlüssel eines Familienmitglieds gilt nur auf einem Gerät, Administrator frei ---------- */
@@ -463,7 +471,7 @@ async function autoFinish(){
   }
 }
 function newProduct(toList=true){
-  const defShop=newShopDefault||(view==='shop'?shop:''); newShopDefault='';
+  const defShop=newShopDefault||(view==='shop'?shop:view==='extra'&&openX?openX:''); newShopDefault='';
   $('#fShop').innerHTML=`<option value="">– bitte wählen –</option>`+data.geschaefte.filter(g=>SHOPS().includes(g.id)).map(g=>`<option value="${g.id}" ${g.id===defShop?'selected':''}>${esc(g.name)}</option>`).join('');
   $('#kats').innerHTML=[...new Set(data.katalog.map(p=>p.kategorie))].map(k=>`<option value="${esc(k)}">`).join('');
   $('#fName').value=query;$('#fMarke').value='';$('#fKat').value=view==='group'?group:'';$('#fMenge').value='';
@@ -538,7 +546,7 @@ $('#dlgForm').onsubmit=e=>{
 
 /* ---------- Produktgruppen ---------- */
 const ICON={'Eier':'🥚','Getränke':'🥤','Obst & Gemüse':'🥦','Fleisch':'🥩','Wurst':'🌭','Käse':'🧀','Müsli & Frühstück':'🥣','Tomatensauce & Saucen':'🍅','Kühlprodukte':'🧈','Nudeln & Reis':'🍝','Konserven':'🥫','Tiefkühl':'🧊','Backen':'🧁','Vorrat':'🫒','Brot':'🥖','Süßes & Snacks':'🍫','Tee':'🍵','Haushalt':'🧻','Putzmittel':'🧽','Wäsche':'🧺','Körperpflege':'🧴','Haare':'💇','Gesicht':'🧖','Kosmetik':'💄','Zahnpflege':'🪥','Herren':'🪒'};
-const CORE=['edeka','budni','tibarg'];
+const CORE=['edeka','budni'];
 const SHOPS=()=>data.geschaefte.map(g=>g.id);
 const EXTRAS=()=>data.geschaefte.filter(g=>!CORE.includes(g.id));
 const shopName=id=>data.geschaefte.find(g=>g.id===id)?.name||'?';
@@ -900,6 +908,7 @@ function renderTabs(){
   const dot=b=>b?'<span class="dot"></span>':'';
   $('#tabs').innerHTML=CORE.map(id=>`<button data-v="shop" data-s="${id}" class="${view==='shop'&&id===shop?'on':''}" title="${esc(shopName(id))}">${TABLABEL[id]||esc(shopName(id))}${dot(fresh([id],id))}</button>`).join('')
     +`<button data-v="extra" class="${view==='extra'?'on':''}">Andere${dot(fresh(EXTRAS().map(g=>g.id),'andere'))}</button>`
+    +`<button data-v="notes" class="${view==='notes'?'on':''}">Notizen</button>`
     +`<button data-v="info" class="info ${['info','stats','setup','catalog'].includes(view)?'on':''}" title="Info">ⓘ</button>`;
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.v,b.dataset.s));
   const on=$('#tabs .on'); on&&on.scrollIntoView({inline:'nearest',block:'nearest'});
@@ -910,7 +919,7 @@ function markSeen(){
   const k=view==='shop'?shop:view==='extra'?'andere':null; if(!k) return;
   const seen=JSON.parse(localStorage.getItem(SEEN_KEY)||'{}'); seen[k]=Date.now(); localStorage.setItem(SEEN_KEY,JSON.stringify(seen));
 }
-function go(v,s){query='';panel=null;xq=null;addingShop=false;view=v;if(s)shop=s;render();scrollTo(0,0);refresh()}
+function go(v,s){query='';panel=null;xq=null;addingShop=false;openX=null;editNote=null;view=v;if(s)shop=s;render();scrollTo(0,0);refresh()}
 $('#bHome').onclick=()=>go('home');
 function listRow(l){const p=prod(l.id);return `<div class="swipe"><div class="sw-del">🗑 Löschen</div><div class="sw-ok">${l.erledigt?'↺ Zurück':'✓ Erledigt'}</div>
       <div class="item tint ${l.erledigt?'done':''}" style="--h:${hueOf(p.kategorie)}" data-t="${l.id}">
@@ -942,34 +951,23 @@ function bindList(){
     el.onclick=()=>{if(!moved)toggle(id);moved=false};
   });
 }
-/* ---------- Tab „Sonstige“: weitere Geschäfte als Karten ---------- */
+/* ---------- Tab „Andere“: weitere Geschäfte als Karten; Antippen öffnet die Einkaufsliste in der Karte ---------- */
 function renderExtras(){
   let html='';
+  if(openX&&!EXTRAS().some(g=>g.id===openX)) openX=null;
   for(const g of EXTRAS()){
-    const items=shopItems(g.id);
-    const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,g.id,prod(a.id))-rankOf(data,g.id,prod(b.id)));
-    const done=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
-    html+=`<div class="scard"><div class="shead"><b>${esc(g.name)}</b>${open.length?`<span class="cnt">${open.length}</span>`:''}<span style="flex:1"></span><button class="del" data-del="${g.id}" title="Geschäft löschen">🗑</button></div>
-      ${open.map(listRow).join('')}${done.map(listRow).join('')}
-      ${done.length?`<button class="btn" data-fin="${g.id}" style="margin-top:6px;padding:10px">Einkauf abschließen (${done.length})</button>`:''}
-      <div class="add" style="margin-top:6px"><input data-xq="${g.id}" placeholder="Artikel hinzufügen…" autocomplete="off" value="${xq?.id===g.id?esc(xq.text):''}"></div>`;
-    if(xq?.id===g.id&&xq.text){
-      const q=xq.text.toLowerCase(), f=freq();
-      const hits=data.katalog.filter(p=>label(p).toLowerCase().includes(q)).sort((a,b)=>((b.geschaeft===g.id)-(a.geschaeft===g.id))||((f[b.id]||0)-(f[a.id]||0))).slice(0,8);
-      html+=`<div style="margin-top:6px">${hits.map(prow).join('')}<button class="btn sec" data-xnew="${g.id}" style="margin-top:4px;padding:10px">＋ „${esc(xq.text)}“ neu für ${esc(g.name)}</button></div>`;
-    }
-    html+=`</div>`;
+    const n=shopItems(g.id).filter(l=>!l.erledigt).length, isOpen=openX===g.id;
+    html+=`<div class="scard ${isOpen?'open':''}"><div class="shead" data-ox="${g.id}"><span class="chev">${isOpen?'▾':'▸'}</span><b>${esc(g.name)}</b>${n?'<span class="ydot" title="Liste nicht leer"></span>':''}<span style="flex:1"></span><button class="del" data-del="${g.id}" title="Geschäft löschen">🗑</button></div>
+      ${isOpen?`<div class="sbody">${shopBody(g.id)}</div>`:''}</div>`;
   }
   if(!EXTRAS().length) html+=`<div class="empty">Noch keine weiteren Geschäfte.</div>`;
   html+=addingShop?`<div class="scard"><div class="add"><input id="newShop" placeholder="Name des Geschäfts" autocomplete="off"><button class="scanb" id="newShopOk" title="Anlegen" style="font-size:20px">✓</button></div><button class="btn sec" id="newShopX" style="padding:10px;margin-top:6px">Abbrechen</button></div>`
     :`<button class="btn sec" id="addShop">＋ Geschäft hinzufügen</button>`;
   $('#main').innerHTML=html;
-  bindList(); bindRows();
+  if(openX) bindShop(openX);
   const m=$('#main');
-  m.querySelectorAll('[data-fin]').forEach(b=>b.onclick=()=>finish(b.dataset.fin));
-  m.querySelectorAll('[data-del]').forEach(b=>b.onclick=()=>deleteShop(b.dataset.del));
-  m.querySelectorAll('[data-xnew]').forEach(b=>b.onclick=()=>{newShopDefault=b.dataset.xnew;query=xq.text;newProduct();query='';xq=null});
-  m.querySelectorAll('[data-xq]').forEach(inp=>inp.oninput=()=>{xq={id:inp.dataset.xq,text:inp.value};render();const n=$(`[data-xq="${inp.dataset.xq}"]`);n.focus();n.setSelectionRange(n.value.length,n.value.length)});
+  m.querySelectorAll('[data-ox]').forEach(h=>h.onclick=e=>{if(e.target.closest('[data-del]'))return;const id=h.dataset.ox;openX=openX===id?null:id;panel=null;query='';render()});
+  m.querySelectorAll('[data-del]').forEach(b=>b.onclick=e=>{e.stopPropagation();deleteShop(b.dataset.del)});
   $('#addShop')&&($('#addShop').onclick=()=>{addingShop=true;render();$('#newShop').focus()});
   $('#newShopX')&&($('#newShopX').onclick=()=>{addingShop=false;render()});
   const mk=()=>{const name=$('#newShop').value.trim();if(!name)return;addingShop=false;
@@ -977,6 +975,39 @@ function renderExtras(){
     change('Neues Geschäft: '+name,d=>{if(!d.geschaefte.some(g=>g.id===id))d.geschaefte.push({id,name})})};
   $('#newShopOk')&&($('#newShopOk').onclick=mk);
   $('#newShop')&&($('#newShop').onkeydown=e=>{if(e.key==='Enter')mk()});
+}
+/* ---------- Tab „Notizen“: Karten mit Überschrift und Text; zuklappen merkt sich jedes Gerät ---------- */
+const NOTE_KEY='einkauf.notizenZu';
+function renderNotes(){
+  const zu=new Set(JSON.parse(localStorage.getItem(NOTE_KEY)||'[]'));
+  const form=n=>`<div class="scard note"><input id="nT" placeholder="Überschrift" value="${esc(n?.titel||'')}" autocomplete="off">
+      <textarea id="nX" rows="6" placeholder="Notiz…">${esc(n?.text||'')}</textarea>
+      <div class="row"><button class="btn sec" id="nCancel" style="margin:0;padding:10px">Abbrechen</button><button class="btn" id="nSave" style="margin:0;padding:10px">Speichern</button></div></div>`;
+  let html='';
+  for(const n of data.notizen){
+    if(editNote===n.id){html+=form(n);continue}
+    const closed=zu.has(n.id);
+    html+=`<div class="scard note"><div class="shead" data-nz="${n.id}"><span class="chev">${closed?'▸':'▾'}</span><b>${esc(n.titel||'Notiz')}</b><span style="flex:1"></span>
+      <button class="del" data-ne="${n.id}" title="Bearbeiten">✎</button><button class="del" data-nd="${n.id}" title="Löschen">🗑</button></div>
+      ${closed?'':`<div class="nbody">${esc(n.text||'')||'<span class="hint">(leer)</span>'}</div>`}</div>`;
+  }
+  if(editNote==='neu') html+=form(null);
+  else if(!data.notizen.length) html+=`<div class="empty">Noch keine Notizen.</div>`;
+  if(!editNote) html+=`<button class="btn sec" id="nAdd">＋ Notiz hinzufügen</button>`;
+  $('#main').innerHTML=html;
+  const m=$('#main');
+  m.querySelectorAll('[data-nz]').forEach(h=>h.onclick=e=>{if(e.target.closest('button'))return;const id=h.dataset.nz;zu.has(id)?zu.delete(id):zu.add(id);localStorage.setItem(NOTE_KEY,JSON.stringify([...zu]));render()});
+  m.querySelectorAll('[data-ne]').forEach(b=>b.onclick=()=>{editNote=b.dataset.ne;render();$('#nX').focus()});
+  m.querySelectorAll('[data-nd]').forEach(b=>b.onclick=()=>{const n=data.notizen.find(x=>x.id===b.dataset.nd);if(!confirm(`Notiz „${n?.titel||'Notiz'}“ löschen?`))return;change('Notiz gelöscht: '+(n?.titel||''),d=>{d.notizen=(d.notizen||[]).filter(x=>x.id!==n.id)})});
+  $('#nAdd')&&($('#nAdd').onclick=()=>{editNote='neu';render();$('#nT').focus()});
+  $('#nCancel')&&($('#nCancel').onclick=()=>{editNote=null;render()});
+  $('#nSave')&&($('#nSave').onclick=()=>{
+    const titel=$('#nT').value.trim(), text=$('#nX').value.replace(/\s+$/,''), id=editNote==='neu'?'n'+Date.now().toString(36):editNote;
+    if(!titel&&!text){setStatus('⚠︎ Bitte Überschrift oder Text eintragen');return}
+    editNote=null;
+    change((data.notizen.some(x=>x.id===id)?'Notiz geändert: ':'Neue Notiz: ')+titel,d=>{d.notizen??=[];const x=d.notizen.find(y=>y.id===id);
+      if(x){x.titel=titel;x.text=text;x.am=today();x.von=cfg.name||''} else d.notizen.push({id,titel,text,von:cfg.name||'',am:today()})});
+  });
 }
 function deleteShop(id){
   const n=data.katalog.filter(p=>p.geschaeft===id).length, open=shopItems(id).length;
@@ -1003,9 +1034,16 @@ function render(){
   if(view==='catalog') return renderCatalog();
   if(view==='extra') return renderExtras();
   if(view==='stats') return renderStats();
-  const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
-  const cand=data.katalog.filter(p=>p.geschaeft===shop||p.auchBei===shop);
+  if(view==='notes') return renderNotes();
+  $('#main').innerHTML=shopBody(shop);
+  bindShop(shop);
+}
+/* Inhalt einer Einkaufsliste (Tabs E/B und aufgeklappte Karten unter „Andere“) */
+function shopBody(sh){
+  const f=freq();
+  const own=data.katalog.filter(p=>p.geschaeft===sh||p.auchBei===sh);
   const score=p=>(f[p.id]||0)*10+(p.favorit?5:0);
+  const cand=own;
   let html=`<div class="seg"><button id="pSearch" class="${panel==='search'?'on':''}">🔍 Suchen / Neu</button><button id="pTop" class="${panel==='top'?'on':''}">⭐ Top-Hits</button></div>`;
   if(panel==='search'){
     html+=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">${BC_ICON}</button></div>`;
@@ -1015,29 +1053,28 @@ function render(){
       html+=hits.map(prow).join('')+`<button class="btn sec" data-new="1" style="margin:4px 0 8px">＋ „${esc(query)}“ als neuen Artikel anlegen</button>`;
     }
   }else if(panel==='top'){
-    const f2=freq();
-    const top=[...cand].sort((a,b)=>score(b)-score(a)||a.name.localeCompare(b.name,'de'));
-    html+=`<div class="toplist"><div class="tophead"><span>${esc(data.geschaefte.find(g=>g.id===shop)?.name||'')} – nach Häufigkeit</span><button id="pClose">✕ Schließen</button></div>
-      ${top.map(p=>prow(p).replace(/(<div class="prow[^>]*>)/,`$1<span class="hits">${f2[p.id]||''}</span>`)).join('')}
-      <button class="btn sec" id="pClose2" style="margin:4px 0 0">Liste schließen</button></div>`;
+    const top=[...own].sort((a,b)=>score(b)-score(a)||a.name.localeCompare(b.name,'de'));
+    html+=`<div class="toplist"><div class="tophead"><span>${esc(shopName(sh))} – nach Häufigkeit</span><button id="pClose">✕ Schließen</button></div>
+      ${top.map(p=>prow(p).replace(/(<div class="prow[^>]*>)/,`$1<span class="hits">${f[p.id]||''}</span>`)).join('')||'<div class="empty">Noch keine Produkte für dieses Geschäft.</div>'}
+      ${top.length>6?'<button class="btn sec" id="pClose2" style="margin:4px 0 0">Liste schließen</button>':''}</div>`;
   }
-  const items=shopItems(shop);
+  const items=shopItems(sh);
   if(!items.length) html+=`<div class="empty">Nichts auf der Liste 🎉</div>`;
-  const row=listRow;
-  const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,shop,prod(a.id))-rankOf(data,shop,prod(b.id)));
+  const open=items.filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,sh,prod(a.id))-rankOf(data,sh,prod(b.id)));
   const inCart=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
-  for(const l of open) html+=row(l);
-  if(inCart.length){html+=`<h2>Im Wagen</h2>`;inCart.forEach(l=>html+=row(l))}
-  if(items.some(l=>l.erledigt)) html+=`<button class="btn" id="fin">Einkauf abschließen (${items.filter(l=>l.erledigt).length})</button>`;
-  $('#main').innerHTML=html;
+  for(const l of open) html+=listRow(l);
+  if(inCart.length){html+=`<h2>Im Wagen</h2>`;inCart.forEach(l=>html+=listRow(l))}
+  if(inCart.length) html+=`<button class="btn" id="fin">Einkauf abschließen (${inCart.length})</button>`;
+  return html;
+}
+function bindShop(sh){
   bindSearch();
-  $('#main').querySelectorAll('[data-add]').forEach(e=>e.onclick=()=>addItem(e.dataset.add));
   bindList();
-  $('#fin')&&($('#fin').onclick=()=>finish(shop));
+  $('#fin')&&($('#fin').onclick=()=>finish(sh));
   bindRows();
   $('#pSearch').onclick=()=>{panel=panel==='search'?null:'search';query='';render();if(panel==='search')$('#q').focus()};
   $('#pTop').onclick=()=>{panel=panel==='top'?null:'top';query='';render()};
-  ['#pClose','#pClose2'].forEach(k=>$(k)&&($(k).onclick=()=>{panel=null;render();scrollTo(0,0)}));
+  ['#pClose','#pClose2'].forEach(k=>$(k)&&($(k).onclick=()=>{panel=null;render()}));
 }
 /* ---------- Produktkatalog bearbeiten ---------- */
 let catQ='', catShop='';
