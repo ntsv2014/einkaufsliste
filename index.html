@@ -171,6 +171,11 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 #wheel .wi{height:44px;line-height:44px;text-align:center;font-size:17px;scroll-snap-align:center;color:var(--mute);cursor:pointer}
 #wheel .wi.sel{color:var(--fg);font-weight:800;font-size:20px}
 .wsel{position:absolute;left:0;right:0;top:88px;height:44px;border-top:2px solid var(--line);border-bottom:2px solid var(--line);pointer-events:none}
+.qbtn{touch-action:none;user-select:none;-webkit-user-select:none}
+.qbtn.dragging{outline:2px solid var(--acc)}
+.qpop{position:fixed;transform:translate(-50%,-50%);z-index:60;background:var(--card);color:var(--fg);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);padding:4px 0;min-width:110px;text-align:center;pointer-events:none}
+.qpop div{height:30px;line-height:30px;font-size:15px;color:var(--mute);padding:0 12px;white-space:nowrap}
+.qpop div.sel{color:var(--fg);font-weight:800;font-size:18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
 </style>
 </head>
 <body>
@@ -618,6 +623,37 @@ function pickQty(p,cur){
     w.scrollTop=vals.indexOf(cur)*H; mark();
   });
 }
+/* Menge direkt am Feld drehen: Finger auflegen und nach oben/unten ziehen; kurzes Tippen öffnet die große Walze */
+function bindQtyDrag(btn){
+  const id=btn.dataset.q;
+  btn.onpointerdown=ev=>{
+    const p=prod(id), vals=wheelValues(p), e=openEntry(id);
+    const start=cnt[id]??(e?.anzahl||suggest(id));
+    if(!vals.includes(start)) vals.push(start), vals.sort((a,b)=>a-b);
+    let i0=vals.indexOf(start), i=i0, y0=ev.clientY, moved=false;
+    btn.setPointerCapture(ev.pointerId);
+    const pop=document.createElement('div'); pop.className='qpop';
+    const r=btn.getBoundingClientRect();
+    pop.style.left=(r.left+r.width/2)+'px'; pop.style.top=(r.top+r.height/2)+'px';
+    const draw=()=>{pop.innerHTML=[-2,-1,0,1,2].map(k=>{const v=vals[i+k];return `<div class="${k?'':'sel'}" style="opacity:${v==null?0:1-Math.abs(k)*.33}">${v==null?'&nbsp;':fmtQ(p,v)}</div>`}).join('');btn.textContent=fmtQ(p,vals[i])};
+    const move=e2=>{
+      const dy=y0-e2.clientY;
+      if(!moved&&Math.abs(dy)<6) return;
+      if(!moved){moved=true;document.body.appendChild(pop);btn.classList.add('dragging')}
+      const ni=Math.max(0,Math.min(vals.length-1,i0+Math.round(dy/22)));
+      if(ni!==i){i=ni;navigator.vibrate?.(8)}
+      draw();
+    };
+    const up=()=>{
+      btn.onpointermove=null;btn.onpointerup=null;btn.onpointercancel=null;
+      pop.remove();btn.classList.remove('dragging');
+      if(!moved) return qtyClick(id);
+      const v=vals[i]; if(v===start) return;
+      if(openEntry(id)){delete cnt[id];setOnList(id,v)} else {cnt[id]=v;render()}
+    };
+    btn.onpointermove=move; btn.onpointerup=up; btn.onpointercancel=up;
+  };
+}
 async function qtyClick(id){
   const p=prod(id), e=openEntry(id), cur=cnt[id]??(e?.anzahl||suggest(id));
   const v=await pickQty(p,cur); if(v==null||v===cur) return;
@@ -626,7 +662,7 @@ async function qtyClick(id){
 function bindRows(){
   const m=$('#main');
   const cur=id=>cnt[id]??(openEntry(id)?.anzahl||suggest(id));
-  m.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>qtyClick(b.dataset.q));
+  m.querySelectorAll('[data-q]').forEach(bindQtyDrag);
   m.querySelectorAll('[data-cart]').forEach(b=>b.onclick=()=>cartClick(b.dataset.cart));
   m.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editProduct(b.dataset.edit));
   m.querySelectorAll('[data-send]').forEach(b=>b.onclick=()=>send(b.dataset.send));
