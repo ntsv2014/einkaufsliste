@@ -763,7 +763,7 @@ function renderTabs(){
   const dot=b=>b?'<span class="dot"></span>':'';
   $('#tabs').innerHTML=CORE.map(id=>`<button data-v="shop" data-s="${id}" class="${view==='shop'&&id===shop?'on':''}" title="${esc(shopName(id))}">${TABLABEL[id]||esc(shopName(id))}${dot(fresh([id],id))}</button>`).join('')
     +`<button data-v="extra" class="${view==='extra'?'on':''}">Andere${dot(fresh(EXTRAS().map(g=>g.id),'andere'))}</button>`
-    +`<button data-v="info" class="info ${view==='info'||view==='stats'?'on':''}" title="Info">ⓘ</button>`;
+    +`<button data-v="info" class="info ${view==='info'||view==='stats'||view==='setup'?'on':''}" title="Info">ⓘ</button>`;
   $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>go(b.dataset.v,b.dataset.s));
   const on=$('#tabs .on'); on&&on.scrollIntoView({inline:'nearest',block:'nearest'});
 }
@@ -862,6 +862,7 @@ function render(){
   if(view==='home') return renderHome();
   if(view==='group') return renderGroup();
   if(view==='info') return renderInfo();
+  if(view==='setup') return renderSetup();
   if(view==='extra') return renderExtras();
   if(view==='stats') return renderStats();
   const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
@@ -908,7 +909,6 @@ function renderInfo(){
     <label class="hint" style="display:block;margin:16px 0 6px">Neue Produkte</label>
     ${data.katalog.filter(p=>p.angelegt).sort((a,b)=>b.angelegt.localeCompare(a.angelegt)||b.id.localeCompare(a.id)).slice(0,6).map(p=>`<button class="newp" data-np="${p.id}">${esc(label(p))} <small>· ${esc(p.kategorie)} · ${esc(shopName(p.geschaeft))} · ${p.angelegt.split('-').reverse().join('.')}${p.eans?.length?' · Barcode ✓':''}</small></button>`).join('')}
     <button class="btn sec" id="iNew" style="margin-top:2px">＋ Produkt anlegen (mit Barcode)</button>
-    ${myRole==='admin'?`<div id="family" style="margin-top:16px"></div>`:''}
     <button class="btn sec" id="iStats">▤ Statistik</button>
     <button class="btn sec" id="iSync">⟳ Jetzt neu laden</button>
     <button class="btn sec" id="iCfg">⚙︎ Einstellungen / Schlüssel</button>
@@ -918,25 +918,43 @@ function renderInfo(){
   $('#main').querySelectorAll('[data-np]').forEach(b=>b.onclick=()=>editProduct(b.dataset.np));
   $('#iTheme').querySelectorAll('[data-th]').forEach(b=>b.onclick=()=>{localStorage.setItem(THEME_KEY,b.dataset.th);applyTheme(b.dataset.th);render()});
   $('#iSync').onclick=async()=>{await refresh();setStatus('Aktualisiert')};
-  $('#iCfg').onclick=renderSetup;
-  if(myRole==='admin') renderFamily();
+  $('#iCfg').onclick=()=>{view='setup';render()};
+
 }
 /* Einladungen liegen nur auf dem Gerät des Administrators (mit Schlüssel), bis die Person sich angemeldet hat */
+/* Einladungen (mit Schlüssel) liegen verschlüsselt in den gemeinsamen Daten – nur mit dem Administrator-Schlüssel lesbar,
+   damit sie auf allen Geräten des Administrators sichtbar sind, aber nicht für die übrigen Nutzer */
 const INV_KEY='einkauf.einladungen';
-let showInv=null, addingMember=false;
+let showInv=null, addingMember=false, migrating=false;
+const b64u=u=>btoa(String.fromCharCode(...new Uint8Array(u)));
+const unb64=x=>Uint8Array.from(atob(x),c=>c.charCodeAt(0));
+async function adminKey(){const raw=await crypto.subtle.digest('SHA-256',new TextEncoder().encode('einkauf-einladung|'+cfg.token));return crypto.subtle.importKey('raw',raw,'AES-GCM',false,['encrypt','decrypt'])}
+async function encTok(t){const iv=crypto.getRandomValues(new Uint8Array(12));const ct=await crypto.subtle.encrypt({name:'AES-GCM',iv},await adminKey(),new TextEncoder().encode(t));return{iv:b64u(iv),ct:b64u(ct)}}
+async function decTok(x){try{return new TextDecoder().decode(await crypto.subtle.decrypt({name:'AES-GCM',iv:unb64(x.iv)},await adminKey(),unb64(x.ct)))}catch{return null}}
+const inviteLink=(n,t)=>APP_URL+'#invite='+btoa(unescape(encodeURIComponent(JSON.stringify({n,o:cfg.owner,r:cfg.repo,p:cfg.path,t}))));
+async function addInvite(n,t){
+  const h=await tokHash(t), e=await encTok(t), id='i'+Date.now().toString(36);
+  await change('Einladung angelegt: '+n,d=>{d.einladungen??=[];if(!d.einladungen.some(x=>x.h===h))d.einladungen.push({id,n,h,...e,am:today()})});
+  return id;
+}
 async function renderFamily(){
   const box=$('#family'); if(!box) return;
   const g=data.geraete||{};
-  let inv=JSON.parse(localStorage.getItem(INV_KEY)||'[]');
-  const hashes=await Promise.all(inv.map(x=>tokHash(x.t)));
-  const before=inv.length; inv=inv.filter((x,k)=>!g[hashes[k]]);       // angemeldete fallen raus, Schlüssel wird vergessen
-  if(inv.length!==before) localStorage.setItem(INV_KEY,JSON.stringify(inv));
+  /* ältere, nur auf diesem Gerät gespeicherte Einladungen einmalig übernehmen */
+  const local=JSON.parse(localStorage.getItem(INV_KEY)||'[]');
+  if(local.length&&!migrating){migrating=true;localStorage.removeItem(INV_KEY);for(const x of local){const h=await tokHash(x.t);if(!g[h]&&!(data.einladungen||[]).some(y=>y.h===h))await addInvite(x.n,x.t)}migrating=false;return renderFamily()}
+  /* angemeldete Nutzer fallen aus der Einladungsliste */
+  if((data.einladungen||[]).some(x=>g[x.h])) {change('Einladungen bereinigt',d=>{d.einladungen=(d.einladungen||[]).filter(x=>!(d.geraete||{})[x.h])});return}
+  const inv=await Promise.all((data.einladungen||[]).map(async x=>({...x,t:await decTok(x)})));
   const reg=Object.entries(g).sort((a,b)=>(a[1].rolle==='admin'?-1:1)-(b[1].rolle==='admin'?-1:1)||a[1].name.localeCompare(b[1].name,'de'));
-  box.innerHTML=`<label class="hint" style="display:block;margin-bottom:6px">Nutzer</label>
+  box.innerHTML=`<h3 style="margin-top:0">Nutzer</h3>
     ${reg.map(([h,x])=>`<div class="fam"><span>${esc(x.name)} <small class="hint">· ${x.rolle==='admin'?'Administrator · ':''}seit ${x.seit.split('-').reverse().join('.')}</small></span>${x.rolle!=='admin'?`<button data-free="${h}">Gerät freigeben</button>`:(h===myHash&&!addingMember?`<button id="invAdd">＋ Nutzer anlegen</button>`:'')}</div>`).join('')}
-    ${inv.length?`<label class="hint" style="display:block;margin:12px 0 6px">Noch nicht angemeldet</label>`:''}
-    ${inv.map((x,k)=>`<div class="fam"><span>${esc(x.n)}</span><button data-qr="${k}">${showInv===k?'Code ausblenden':'QR-Code zeigen'}</button><button data-rm="${k}" title="Einladung löschen">🗑</button></div>
-      ${showInv===k?`<div class="qrbox"><div class="qr" id="qrInv"></div><small class="hint">Direkt vom Bildschirm scannen lassen – nicht als Foto verschicken.</small></div>`:''}`).join('')}
+    ${inv.length?`<label class="hint" style="display:block;margin:12px 0 6px">Noch nicht angemeldet – Einladung per QR-Code oder Link</label>`:''}
+    ${inv.map(x=>`<div class="fam"><span>${esc(x.n)}${x.t?'':' <small class="hint">· mit anderem Schlüssel angelegt</small>'}</span>${x.t?`<button data-qr="${x.id}">${showInv===x.id?'Ausblenden':'Einladung zeigen'}</button>`:''}<button data-rm="${x.id}" title="Einladung löschen">🗑</button></div>
+      ${showInv===x.id&&x.t?`<div class="qrbox"><div class="qr" id="qrInv"></div>
+        <input id="invLink" readonly value="${esc(inviteLink(x.n,x.t))}" style="width:100%;font-size:12px;padding:8px;border:1px solid var(--line);border-radius:8px">
+        <div class="row" style="width:100%"><button class="btn sec" id="invCopy" style="margin:0;padding:10px">Link kopieren</button><button class="btn sec" id="invShare" style="margin:0;padding:10px">↗︎ Teilen</button></div>
+        <small class="hint">QR-Code bzw. Link enthält den Schlüssel von ${esc(x.n)} – nur an diese Person schicken. Er funktioniert nur auf einem Gerät.</small></div>`:''}`).join('')}
     ${addingMember?`<div class="fam" style="display:block">
         <label class="hint">Name des neuen Nutzers</label>
         <input id="invName" name="family-member-name" autocomplete="off" data-lpignore="true" data-1p-ignore placeholder="z. B. Johannes" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:2px 0 8px">
@@ -949,16 +967,23 @@ async function renderFamily(){
     if(!confirm(`Gerät von ${n} freigeben?\nDer Schlüssel kann danach auf einem neuen Gerät angemeldet werden.`))return;
     change('Gerät freigegeben: '+n,d=>{if(d.geraete)delete d.geraete[h]});
   });
-  box.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>{const k=+b.dataset.qr;showInv=showInv===k?null:k;renderFamily()});
-  box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const k=+b.dataset.rm;if(!confirm(`Einladung für ${inv[k].n} löschen?`))return;inv.splice(k,1);localStorage.setItem(INV_KEY,JSON.stringify(inv));showInv=null;renderFamily()});
-  if(showInv!==null&&inv[showInv]){const x=inv[showInv];qrInto('#qrInv',APP_URL+'#invite='+btoa(unescape(encodeURIComponent(JSON.stringify({n:x.n,o:cfg.owner,r:cfg.repo,p:cfg.path,t:x.t})))))}
+  box.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>{const k=b.dataset.qr;showInv=showInv===k?null:k;renderFamily()});
+  box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const k=b.dataset.rm,x=inv.find(y=>y.id===k);if(!confirm(`Einladung für ${x?.n} löschen?`))return;showInv=null;change('Einladung gelöscht: '+x?.n,d=>{d.einladungen=(d.einladungen||[]).filter(y=>y.id!==k)})});
+  const cur=inv.find(x=>x.id===showInv&&x.t);
+  if(cur){
+    const link=inviteLink(cur.n,cur.t); qrInto('#qrInv',link);
+    $('#invCopy').onclick=async()=>{try{await navigator.clipboard.writeText(link);setStatus('Link kopiert')}catch{$('#invLink').select();setStatus('Link markiert – bitte kopieren')}};
+    $('#invShare').onclick=async()=>{try{if(navigator.share)await navigator.share({title:'Einkaufsliste – Einladung für '+cur.n,url:link});else{await navigator.clipboard.writeText(link);setStatus('Link kopiert')}}catch{}};
+  }
   $('#invAdd')&&($('#invAdd').onclick=async()=>{addingMember=true;await renderFamily();$('#invName').value='';$('#invTok').value='';setTimeout(()=>{$('#invName').value='';$('#invTok').value='';$('#invName').focus()},150)});
   $('#invX')&&($('#invX').onclick=()=>{addingMember=false;renderFamily()});
   $('#invGo')&&($('#invGo').onclick=async()=>{
     const n=$('#invName').value.trim(), t=clean($('#invTok').value);
     if(!n||!t){setStatus('⚠︎ Bitte Name und Schlüssel eintragen');return}
-    if(g[await tokHash(t)]){setStatus('⚠︎ Dieser Schlüssel ist schon angemeldet');return}
-    inv.push({n,t});localStorage.setItem(INV_KEY,JSON.stringify(inv));addingMember=false;showInv=inv.length-1;renderFamily();
+    const h=await tokHash(t);
+    if(g[h]){setStatus('⚠︎ Dieser Schlüssel ist schon angemeldet');return}
+    if(h===myHash){setStatus('⚠︎ Das ist Ihr eigener Schlüssel – bitte für die Person einen eigenen anlegen');return}
+    addingMember=false; showInv=await addInvite(n,t); renderFamily();
   });
 }
 const APP_URL=location.protocol==='https:'?location.origin+location.pathname.replace(/index\.html$/,''):'https://ntsv2014.github.io/einkaufsliste/';
@@ -982,9 +1007,12 @@ function renderStats(){
   $('#back').onclick=()=>{view='info';render()};
 }
 function renderSetup(){
-  $('#tabs').innerHTML='';
+  const inApp=!!(cfg&&data);
+  if(inApp){view='setup';renderTabs()} else $('#tabs').innerHTML='';
   const c=cfg||{owner:'',repo:'einkaufsliste-daten',path:'liste.json',token:'',name:''};
-  $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">Einrichtung</h3>
+  $('#main').innerHTML=`${inApp?`<div class="ghead"><button id="sBack">‹ Zurück</button><h3>⚙︎ Einstellungen</h3></div>`:''}
+    ${inApp&&myRole==='admin'?`<div class="setup" id="family" style="margin-bottom:12px"></div>`:''}
+    <div class="setup"><h3 style="margin-top:0">${inApp?'Dieses Gerät':'Einrichtung'}</h3>
     <p style="font-size:14px;color:var(--mute)">Einmal pro Gerät. Der Schlüssel bleibt nur in diesem Browser gespeichert.</p>
     <label>Dein Name</label><input id="sName" value="${esc(c.name)}" placeholder="z. B. Ingo">
     <label>GitHub-Benutzer / Organisation</label><input id="sOwner" value="${esc(c.owner)}" autocapitalize="off">
@@ -1003,6 +1031,8 @@ function renderSetup(){
     catch(e){if(e.message==='BLOCKED')return renderBlocked();const d=await diagnose();$('#sErr').textContent=e.message+'\n\n'+d;cfg=null}
   };
   $('#sOut')&&($('#sOut').onclick=()=>{localStorage.removeItem(LS);cfg=null;data=null;renderSetup()});
+  $('#sBack')&&($('#sBack').onclick=()=>{view='info';render()});
+  if(inApp&&myRole==='admin') renderFamily();
 }
 
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)refresh()});
