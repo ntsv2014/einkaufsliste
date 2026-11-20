@@ -159,6 +159,18 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .crow .t{flex:1;min-width:0;cursor:pointer}
 .crow small{color:var(--mute);font-size:12px}
 .crow button{flex:none;border:0;background:none;font-size:17px;padding:4px 6px;opacity:.7}
+.qbtn{flex:none;border:0;background:rgba(127,127,127,.14);border-radius:9px;padding:9px 10px;font-size:14px;font-weight:700;white-space:nowrap}
+.cartb{position:relative;flex:none;border:0;border-radius:10px;width:46px;height:40px;display:grid;place-items:center}
+.cartb.c-e{background:#f7c600;color:#111}.cartb.c-b{background:#1d4fa8;color:#fff}.cartb.c-o{background:#6b7280;color:#fff}
+.cartb .ck{position:absolute;right:-5px;top:-6px;width:19px;height:19px;border-radius:50%;background:#16a34a;color:#fff;font-size:12px;font-weight:900;display:grid;place-items:center;box-shadow:0 0 0 2px var(--card)}
+.wheeldlg{width:min(86vw,340px)}
+.wheelbox{position:relative;height:220px}
+#wheel{height:220px;overflow-y:auto;scroll-snap-type:y mandatory;scrollbar-width:none;-webkit-mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent);mask-image:linear-gradient(transparent,#000 30%,#000 70%,transparent)}
+#wheel::-webkit-scrollbar{display:none}
+#wheel .wpad{height:88px}
+#wheel .wi{height:44px;line-height:44px;text-align:center;font-size:17px;scroll-snap-align:center;color:var(--mute);cursor:pointer}
+#wheel .wi.sel{color:var(--fg);font-weight:800;font-size:20px}
+.wsel{position:absolute;left:0;right:0;top:88px;height:44px;border-top:2px solid var(--line);border-bottom:2px solid var(--line);pointer-events:none}
 </style>
 </head>
 <body>
@@ -205,6 +217,11 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
   <p class="hint" id="revHint" style="margin-top:0"></p>
   <div id="revList"></div>
   <div class="row" style="margin-top:4px"><button class="btn sec" id="revX">Verwerfen</button><button class="btn" id="revOk">Übernehmen</button></div>
+</dialog>
+<dialog id="dWheel" class="wheeldlg">
+  <h3 id="wheelT" style="margin:0 0 8px;font-size:16px"></h3>
+  <div class="wheelbox"><div id="wheel"></div><div class="wsel"></div></div>
+  <div class="row" style="margin-top:8px"><button class="btn sec" id="wheelX" style="margin:0">Abbrechen</button><button class="btn" id="wheelOk" style="margin:0">OK</button></div>
 </dialog>
 <dialog id="dShop">
   <h3 style="margin-top:0">Wo gibt es das?</h3>
@@ -524,7 +541,7 @@ const openEntry=id=>data.liste.find(l=>l.id===id&&!l.erledigt);
 /* Menge auf der Liste setzen (0 = entfernen) */
 function setOnList(id,n){
   const p=prod(id);
-  change(`${n?'= '+n+'×':'−'} ${label(p)}`,d=>{
+  return change(`${n?'= '+n+'×':'−'} ${label(p)}`,d=>{
     const e=d.liste.find(l=>l.id===id&&!l.erledigt);
     if(!n){d.liste=d.liste.filter(l=>l!==e);return}
     if(e) e.anzahl=n; else d.liste.push({id,anzahl:n,von:cfg.name||'',am:today(),ts:Date.now()});
@@ -541,7 +558,7 @@ function askShop(p){
 }
 async function send(id){
   const p=prod(id), n=cnt[id]??(openEntry(id)?.anzahl||suggest(id)), e0=openEntry(id);
-  if(e0&&n===e0.anzahl){setStatus('Steht schon auf der Liste – Menge mit − / + ändern');return}
+  if(e0&&n===e0.anzahl){setStatus('Steht schon auf der Liste');return}
   if(!SHOPS().includes(p.geschaeft)){
     const s=await askShop(p); if(!s) return;
     await change(`${label(p)} → ${s}`,d=>{const x=d.katalog.find(x=>x.id===id);if(x){x.geschaeft=s;delete x.auchBei}});
@@ -562,20 +579,55 @@ function renderHome(){
   bindSearch(); bindRows();
   $('#main').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{group=b.dataset.g;view='group';render();scrollTo(0,0)});
 }
+const CART_SVG='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h3l2.4 11.2a1.6 1.6 0 0 0 1.6 1.3h8.2a1.6 1.6 0 0 0 1.6-1.2l1.7-7.3H6.4"/><circle cx="9.8" cy="20" r="1.4" fill="currentColor"/><circle cx="17.6" cy="20" r="1.4" fill="currentColor"/></svg>';
+/* Produktzeile: Menge antippen (Walze), Einkaufswagen in Geschäftsfarbe = auf die Liste / wieder herunter */
 function prow(p){
   const e=openEntry(p.id), n=cnt[p.id]??(e?.anzahl||suggest(p.id)), sh=SHOPS().includes(p.geschaeft)?p.geschaeft:'none';
-  const sn=sh==='none'?'?':shopName(sh);
-  const changed=e&&n!==e.anzahl;
-  return `<div class="prow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-edit="${p.id}">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small>
-      ${e?`<br><span class="on">✓ ${fmtQ(p,e.anzahl)} auf ${esc(sn)}-Liste</span>`:''}</div>
-    <div class="step"><button data-m="${p.id}">−</button><span>${fmtN(n)}<small>${esc(unitOf(p)==='Stück'?'':' '+(n===1?unitOf(p):EINH[unitOf(p)][0]))}</small></span><button data-p="${p.id}">+</button></div>
-    <button class="send ${e&&!changed?'onl':sh} ${changed?'upd':''}" data-send="${p.id}">${e?(changed?(n?'Ändern':'Löschen'):'✓ Liste'):'→ '+esc(sn)}</button></div>`;
+  const cls=sh==='edeka'?'c-e':sh==='budni'?'c-b':'c-o';
+  return `<div class="prow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-edit="${p.id}">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small></div>
+    <button class="qbtn" data-q="${p.id}" title="Menge ändern">${fmtQ(p,n)}</button>
+    <button class="cartb ${cls} ${e?'in':''}" data-cart="${p.id}" title="${e?'Von der Liste nehmen':'Auf die '+esc(sh==='none'?'':shopName(sh))+'-Liste'}">${CART_SVG}${e?'<span class="ck">✓</span>':''}</button></div>`;
+}
+async function cartClick(id){
+  const e=openEntry(id);
+  if(e){delete cnt[id];await setOnList(id,0);setStatus(label(prod(id))+' von der Liste genommen');return}
+  await send(id);
+}
+/* Mengen-Walze */
+function wheelValues(p){
+  const st=stepOf(p), max=st===100?5000:st===0.5?20:50, v=[];
+  for(let x=st;x<=max+1e-9;x=Math.round((x+st)*100)/100) v.push(x);
+  return v;
+}
+function pickQty(p,cur){
+  return new Promise(res=>{
+    const dl=$('#dWheel'), w=$('#wheel'), vals=wheelValues(p), H=44;
+    if(!vals.includes(cur)) vals.push(cur), vals.sort((a,b)=>a-b);
+    $('#wheelT').textContent=label(p);
+    w.innerHTML='<div class="wpad"></div>'+vals.map(v=>`<div class="wi">${fmtQ(p,v)}</div>`).join('')+'<div class="wpad"></div>';
+    const items=[...w.querySelectorAll('.wi')];
+    const idx=()=>Math.max(0,Math.min(vals.length-1,Math.round(w.scrollTop/H)));
+    const mark=()=>{const k=idx();items.forEach((el,i)=>el.classList.toggle('sel',i===k))};
+    w.onscroll=mark;
+    items.forEach((el,i)=>el.onclick=()=>w.scrollTo({top:i*H,behavior:'smooth'}));
+    const done=v=>{dl.close();res(v)};
+    $('#wheelOk').onclick=()=>done(vals[idx()]);
+    $('#wheelX').onclick=()=>done(null);
+    dl.oncancel=ev=>{ev.preventDefault();done(null)};
+    dl.showModal();
+    w.scrollTop=vals.indexOf(cur)*H; mark();
+  });
+}
+async function qtyClick(id){
+  const p=prod(id), e=openEntry(id), cur=cnt[id]??(e?.anzahl||suggest(id));
+  const v=await pickQty(p,cur); if(v==null||v===cur) return;
+  if(e){delete cnt[id];setOnList(id,v)} else {cnt[id]=v;render()}
 }
 function bindRows(){
   const m=$('#main');
   const cur=id=>cnt[id]??(openEntry(id)?.anzahl||suggest(id));
-  m.querySelectorAll('[data-p]').forEach(b=>b.onclick=()=>{const id=b.dataset.p;cnt[id]=Math.round((cur(id)+stepOf(prod(id)))*100)/100;render()});
-  m.querySelectorAll('[data-m]').forEach(b=>b.onclick=()=>{const id=b.dataset.m,st=stepOf(prod(id));cnt[id]=Math.max(openEntry(id)?0:st,Math.round((cur(id)-st)*100)/100);render()});
+  m.querySelectorAll('[data-q]').forEach(b=>b.onclick=()=>qtyClick(b.dataset.q));
+  m.querySelectorAll('[data-cart]').forEach(b=>b.onclick=()=>cartClick(b.dataset.cart));
   m.querySelectorAll('[data-edit]').forEach(b=>b.onclick=()=>editProduct(b.dataset.edit));
   m.querySelectorAll('[data-send]').forEach(b=>b.onclick=()=>send(b.dataset.send));
   m.querySelectorAll('[data-new]').forEach(e=>e.onclick=newProduct);
@@ -666,7 +718,7 @@ function addEan(id,code){
 function showProduct(id){
   const p=prod(id); if(!p) return;
   group=p.kategorie; view='group'; query=''; render();
-  const el=document.querySelector(`.prow [data-send="${id}"]`)?.closest('.prow');
+  const el=document.querySelector(`.prow [data-cart="${id}"]`)?.closest('.prow');
   if(el){el.scrollIntoView({block:'center'});el.classList.add('flash')}
 }
 /* Produktdaten zu unbekannten Barcodes bei Open Food/Beauty/Products Facts nachschlagen */
