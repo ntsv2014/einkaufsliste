@@ -176,6 +176,7 @@ nav button.on .dot{box-shadow:0 0 0 1.5px var(--bg)}
 .qpop{position:fixed;transform:translate(-50%,-50%);z-index:60;background:var(--card);color:var(--fg);border-radius:12px;box-shadow:0 8px 30px rgba(0,0,0,.35);padding:4px 0;min-width:110px;text-align:center;pointer-events:none}
 .qpop div{height:30px;line-height:30px;font-size:15px;color:var(--mute);padding:0 12px;white-space:nowrap}
 .qpop div.sel{color:var(--fg);font-weight:800;font-size:18px;border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+.sale{display:inline-grid;place-items:center;width:18px;height:18px;border-radius:50%;background:#dc2626;color:#fff;font-size:11px;font-weight:900;margin:0 5px;vertical-align:1px;flex:none}
 </style>
 </head>
 <body>
@@ -584,12 +585,15 @@ function renderHome(){
   bindSearch(); bindRows();
   $('#main').querySelectorAll('[data-g]').forEach(b=>b.onclick=()=>{group=b.dataset.g;view='group';render();scrollTo(0,0)});
 }
+/* Angebots-Badge: Einträge in data.angebote (zweimal pro Woche automatisch gepflegt), gültig bis einschließlich „bis“ */
+const onSale=p=>{const a=data?.angebote?.[p?.id];return !!a&&(!a.bis||a.bis>=today())};
+const SALE='<span class="sale" title="Im Angebot">%</span>';
 const CART_SVG='<svg viewBox="0 0 24 24" width="22" height="22" fill="none" stroke="currentColor" stroke-width="2.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M2.5 3.5h3l2.4 11.2a1.6 1.6 0 0 0 1.6 1.3h8.2a1.6 1.6 0 0 0 1.6-1.2l1.7-7.3H6.4"/><circle cx="9.8" cy="20" r="1.4" fill="currentColor"/><circle cx="17.6" cy="20" r="1.4" fill="currentColor"/></svg>';
 /* Produktzeile: Menge antippen (Walze), Einkaufswagen in Geschäftsfarbe = auf die Liste / wieder herunter */
 function prow(p){
   const e=openEntry(p.id), n=cnt[p.id]??(e?.anzahl||suggest(p.id)), sh=SHOPS().includes(p.geschaeft)?p.geschaeft:'none';
   const cls=sh==='edeka'?'c-e':sh==='budni'?'c-b':'c-o';
-  return `<div class="prow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-edit="${p.id}">${esc(p.name)}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small></div>
+  return `<div class="prow tint" style="--h:${hueOf(p.kategorie)}"><div class="t" data-edit="${p.id}">${esc(p.name)}${onSale(p)?SALE:''}<br><small>${esc([p.marke,p.menge].filter(Boolean).join(' · '))}</small></div>
     <button class="qbtn" data-q="${p.id}" title="Menge ändern">${fmtQ(p,n)}</button>
     <button class="cartb ${cls} ${e?'in':''}" data-cart="${p.id}" title="${e?'Von der Liste nehmen':'Auf die '+esc(sh==='none'?'':shopName(sh))+'-Liste'}">${CART_SVG}${e?'<span class="ck">✓</span>':''}</button></div>`;
 }
@@ -874,7 +878,7 @@ function go(v,s){query='';panel=null;xq=null;addingShop=false;view=v;if(s)shop=s
 $('#bHome').onclick=()=>go('home');
 function listRow(l){const p=prod(l.id);return `<div class="swipe"><div class="sw-del">🗑 Löschen</div><div class="sw-ok">${l.erledigt?'↺ Zurück':'✓ Erledigt'}</div>
       <div class="item tint ${l.erledigt?'done':''}" style="--h:${hueOf(p.kategorie)}" data-t="${l.id}">
-        <span class="t">${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}</span>
+        <span class="t">${onSale(p)?SALE:''}${esc(p.name)}${p.marke?` <small>${esc(p.marke)}</small>`:''}</span>
         <span class="qty">${fmtQ(p,l.anzahl||1)}</span></div></div>`}
 /* Tippen oder nach links wischen = erledigt (bzw. zurück), nach rechts wischen = löschen */
 function bindList(){
