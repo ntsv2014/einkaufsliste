@@ -556,16 +556,16 @@ $('#dlgForm').onsubmit=e=>{
 };
 
 /* ---------- Produktgruppen ---------- */
-const ICON={'Eier':'🥚','Getränke':'🥤','Obst & Gemüse':'🥦','Fleisch':'🥩','Wurst':'🌭','Käse':'🧀','Müsli & Frühstück':'🥣','Tomatensauce & Saucen':'🍅','Kühlprodukte':'🧈','Nudeln & Reis':'🍝','Konserven':'🥫','Tiefkühl':'🧊','Backen':'🧁','Vorrat':'🫒','Brot':'🥖','Süßes & Snacks':'🍫','Tee':'🍵','Haushalt':'🧻','Putzmittel':'🧽','Wäsche':'🧺','Körperpflege':'🧴','Haare':'💇','Gesicht':'🧖','Kosmetik':'💄','Zahnpflege':'🪥','Herren':'🪒'};
+const ICON={'Gewürze':'🧂','Eier':'🥚','Getränke':'🥤','Obst & Gemüse':'🥦','Fleisch':'🥩','Wurst':'🌭','Käse':'🧀','Müsli & Frühstück':'🥣','Tomatensauce & Saucen':'🍅','Kühlprodukte':'🧈','Nudeln & Reis':'🍝','Konserven':'🥫','Tiefkühl':'🧊','Backen':'🧁','Vorrat':'🫒','Brot':'🥖','Süßes & Snacks':'🍫','Tee':'🍵','Haushalt':'🧻','Putzmittel':'🧽','Wäsche':'🧺','Körperpflege':'🧴','Haare':'💇','Gesicht':'🧖','Kosmetik':'💄','Zahnpflege':'🪥','Herren':'🪒'};
 const CORE=['edeka','budni'];
 const SHOPS=()=>data.geschaefte.map(g=>g.id);
 const EXTRAS=()=>data.geschaefte.filter(g=>!CORE.includes(g.id));
 const shopName=id=>data.geschaefte.find(g=>g.id===id)?.name||'?';
 /* blasse Hintergrundfarbe je Produktgruppe (Farbton) */
-const HUE={'Eier':48,'Getränke':205,'Obst & Gemüse':112,'Fleisch':0,'Wurst':22,'Käse':56,'Müsli & Frühstück':34,'Tomatensauce & Saucen':345,'Kühlprodukte':190,'Nudeln & Reis':70,'Konserven':160,'Tiefkühl':222,'Backen':300,'Vorrat':88,'Brot':28,'Süßes & Snacks':322,'Tee':140,'Haushalt':262,'Putzmittel':176,'Wäsche':240,'Körperpflege':282,'Haare':332,'Gesicht':12,'Kosmetik':310,'Zahnpflege':186,'Herren':232};
+const HUE={'Gewürze':18,'Eier':48,'Getränke':205,'Obst & Gemüse':112,'Fleisch':0,'Wurst':22,'Käse':56,'Müsli & Frühstück':34,'Tomatensauce & Saucen':345,'Kühlprodukte':190,'Nudeln & Reis':70,'Konserven':160,'Tiefkühl':222,'Backen':300,'Vorrat':88,'Brot':28,'Süßes & Snacks':322,'Tee':140,'Haushalt':262,'Putzmittel':176,'Wäsche':240,'Körperpflege':282,'Haare':332,'Gesicht':12,'Kosmetik':310,'Zahnpflege':186,'Herren':232};
 const hueOf=k=>HUE[k]??[...String(k)].reduce((a,c)=>(a*31+c.charCodeAt(0))%360,7);
 /* Maßeinheiten: Plural, Schrittweite */
-const EINH={'Stück':['Stück',1],'Packung':['Packungen',1],'Flasche':['Flaschen',1],'Glas':['Gläser',1],'Dose':['Dosen',1],'Becher':['Becher',1],'Tube':['Tuben',1],'Beutel':['Beutel',1],'Netz':['Netze',1],'Bund':['Bund',1],'Sixpack':['Sixpacks',1],'Kiste':['Kisten',1],'kg':['kg',0.5],'g':['g',100],'l':['l',0.5],'ml':['ml',100]};
+const EINH={'Stück':['Stück',1],'Packung':['Packungen',1],'Flasche':['Flaschen',1],'Glas':['Gläser',1],'Dose':['Dosen',1],'Becher':['Becher',1],'Tube':['Tuben',1],'Beutel':['Beutel',1],'Netz':['Netze',1],'Bund':['Bund',1],'Scheibe':['Scheiben',1],'Sixpack':['Sixpacks',1],'Kiste':['Kisten',1],'kg':['kg',0.5],'g':['g',100],'l':['l',0.5],'ml':['ml',100]};
 /* Für Katalogartikel ohne gespeicherte Einheit eine sinnvolle Vorgabe ableiten */
 function guessUnit(p){
   const t=(p.name+' '+(p.marke||'')+' '+(p.menge||'')).toLowerCase(), k=p.kategorie;
