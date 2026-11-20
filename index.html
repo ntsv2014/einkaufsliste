@@ -534,7 +534,9 @@ function guessUnit(p){
 const unitOf=p=>p?(EINH[p.einheit]?p.einheit:guessUnit(p)):'Stück';
 const stepOf=p=>EINH[unitOf(p)][1];
 const fmtN=n=>String(Math.round(n*100)/100).replace('.',',');
-const fmtQ=(p,n)=>{const u=unitOf(p);return fmtN(n)+' '+(n===1?u:EINH[u][0])};
+const SHORT={'Packung':'Pck.'};
+const unitTxt=(u,n)=>SHORT[u]||(n===1?u:EINH[u][0]);
+const fmtQ=(p,n)=>{const u=unitOf(p);return fmtN(n)+' '+unitTxt(u,n)};
 /* Vorschlag: Menge des letzten Einkaufs, sonst 1 Schritt */
 function lastQty(id){let b=null;for(const h of data.historie)if(h.id===id&&(!b||h.datum>=b.datum))b=h;return b?.anzahl||null}
 const suggest=id=>lastQty(id)??stepOf(prod(id));
@@ -613,6 +615,7 @@ function pickQty(p,cur){
     const dl=$('#dWheel'), w=$('#wheel'), vals=wheelValues(p), H=44;
     if(!vals.includes(cur)) vals.push(cur), vals.sort((a,b)=>a-b);
     $('#wheelT').textContent=label(p);
+    vals.reverse(); /* größte Werte oben: nach unten ziehen = mehr */
     w.innerHTML='<div class="wpad"></div>'+vals.map(v=>`<div class="wi">${fmtQ(p,v)}</div>`).join('')+'<div class="wpad"></div>';
     const items=[...w.querySelectorAll('.wi')];
     const idx=()=>Math.max(0,Math.min(vals.length-1,Math.round(w.scrollTop/H)));
@@ -639,9 +642,9 @@ function bindQtyDrag(btn){
     const pop=document.createElement('div'); pop.className='qpop';
     const r=btn.getBoundingClientRect();
     pop.style.left=(r.left+r.width/2)+'px'; pop.style.top=(r.top+r.height/2)+'px';
-    const draw=()=>{pop.innerHTML=[-2,-1,0,1,2].map(k=>{const v=vals[i+k];return `<div class="${k?'':'sel'}" style="opacity:${v==null?0:1-Math.abs(k)*.33}">${v==null?'&nbsp;':fmtQ(p,v)}</div>`}).join('');btn.textContent=fmtQ(p,vals[i])};
+    const draw=()=>{pop.innerHTML=[2,1,0,-1,-2].map(k=>{const v=vals[i+k];return `<div class="${k?'':'sel'}" style="opacity:${v==null?0:1-Math.abs(k)*.33}">${v==null?'&nbsp;':fmtQ(p,v)}</div>`}).join('');btn.textContent=fmtQ(p,vals[i])};
     const move=e2=>{
-      const dy=y0-e2.clientY;
+      const dy=e2.clientY-y0;   /* nach unten ziehen = mehr */
       if(!moved&&Math.abs(dy)<6) return;
       if(!moved){moved=true;document.body.appendChild(pop);btn.classList.add('dragging')}
       const ni=Math.max(0,Math.min(vals.length-1,i0+Math.round(dy/22)));
@@ -823,7 +826,7 @@ function reviewScan(items){
         if(e) notes.push(`steht schon auf der Liste (${fmtQ(it.p,e.anzahl)})`);
         if(!SHOPS().includes(it.p.geschaeft)) notes.push('Geschäft wird danach abgefragt');
         return `<div class="rv ${it.k>1||e?'warn':''}"><span class="t">${esc(label(it.p))}${notes.length?`<br><small>${notes.join(' · ')}</small>`:''}</span>
-          <div class="step"><button data-rm="${i}">−</button><span>${fmtN(it.qty)}<small>${unitOf(it.p)==='Stück'?'':(it.qty===1?unitOf(it.p):EINH[unitOf(it.p)][0])}</small></span><button data-rp="${i}">+</button></div></div>`;
+          <div class="step"><button data-rm="${i}">−</button><span>${fmtN(it.qty)}<small>${unitOf(it.p)==='Stück'?'':unitTxt(unitOf(it.p),it.qty)}</small></span><button data-rp="${i}">+</button></div></div>`;
       }).join('');
       dl.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.rm];it.qty=Math.max(0,Math.round((it.qty-stepOf(it.p))*100)/100);draw()});
       dl.querySelectorAll('[data-rp]').forEach(b=>b.onclick=()=>{const it=items[+b.dataset.rp];it.qty=Math.round((it.qty+stepOf(it.p))*100)/100;draw()});
