@@ -747,8 +747,10 @@ async function renderFamily(){
     ${inv.map((x,k)=>`<div class="fam"><span>${esc(x.n)}</span><button data-qr="${k}">${showInv===k?'Code ausblenden':'QR-Code zeigen'}</button><button data-rm="${k}" title="Einladung löschen">🗑</button></div>
       ${showInv===k?`<div class="qrbox"><div class="qr" id="qrInv"></div><small class="hint">Direkt vom Bildschirm scannen lassen – nicht als Foto verschicken.</small></div>`:''}`).join('')}
     ${addingMember?`<div class="fam" style="display:block">
-        <input id="invName" placeholder="Name, z. B. Johannes" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:2px 0 6px">
-        <input id="invTok" type="password" placeholder="Schlüssel github_pat_…" autocapitalize="off" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:0 0 6px">
+        <label class="hint">Name des Familienmitglieds</label>
+        <input id="invName" name="family-member-name" autocomplete="off" data-lpignore="true" data-1p-ignore placeholder="z. B. Johannes" style="width:100%;font-size:16px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:2px 0 8px">
+        <label class="hint">Schlüssel dieser Person</label>
+        <input id="invTok" name="family-member-key" type="text" autocomplete="off" autocorrect="off" spellcheck="false" data-lpignore="true" data-1p-ignore placeholder="github_pat_…" autocapitalize="off" style="width:100%;font-size:14px;padding:10px;border:1px solid var(--line);border-radius:8px;margin:2px 0 8px;-webkit-text-security:disc">
         <div class="row"><button class="btn sec" id="invX" style="margin:0;padding:10px">Abbrechen</button><button class="btn" id="invGo" style="margin:0;padding:10px">Anlegen</button></div></div>`
       :`<button class="btn sec" id="invAdd" style="margin-top:6px">＋ Familienmitglied anlegen</button>`}`;
   box.querySelectorAll('[data-free]').forEach(b=>b.onclick=()=>{
@@ -759,7 +761,7 @@ async function renderFamily(){
   box.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>{const k=+b.dataset.qr;showInv=showInv===k?null:k;renderFamily()});
   box.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{const k=+b.dataset.rm;if(!confirm(`Einladung für ${inv[k].n} löschen?`))return;inv.splice(k,1);localStorage.setItem(INV_KEY,JSON.stringify(inv));showInv=null;renderFamily()});
   if(showInv!==null&&inv[showInv]){const x=inv[showInv];qrInto('#qrInv',APP_URL+'#invite='+btoa(unescape(encodeURIComponent(JSON.stringify({n:x.n,o:cfg.owner,r:cfg.repo,p:cfg.path,t:x.t})))))}
-  $('#invAdd')&&($('#invAdd').onclick=async()=>{addingMember=true;await renderFamily();$('#invName')?.focus()});
+  $('#invAdd')&&($('#invAdd').onclick=async()=>{addingMember=true;await renderFamily();$('#invName').value='';$('#invTok').value='';setTimeout(()=>{$('#invName').value='';$('#invTok').value='';$('#invName').focus()},150)});
   $('#invX')&&($('#invX').onclick=()=>{addingMember=false;renderFamily()});
   $('#invGo')&&($('#invGo').onclick=async()=>{
     const n=$('#invName').value.trim(), t=clean($('#invTok').value);
