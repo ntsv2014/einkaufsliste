@@ -451,11 +451,10 @@ function toggle(id){
    und den Einkauf sofort abschließen */
 async function allBought(s){
   const open=shopItems(s).filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,s,prod(a.id))-rankOf(data,s,prod(b.id))).map(l=>l.id);
-  if(!open.length) return;
-  const all=shopItems(s).length;
-  if(!confirm(`Alle ${all} Artikel als eingekauft abschließen?`)) return;
+  const all=shopItems(s).length; if(!all) return;
+  if(!confirm(`Alle ${all} Artikel bei ${shopName(s)} als eingekauft markieren und die Liste leeren?`)) return;
   const t=Date.now();
-  change(`Alles eingekauft (${shopName(s)})`,d=>{open.forEach((id,i)=>{for(const e of d.liste)if(e.id===id&&!e.erledigt){e.erledigt=true;e.um=t+i}})});
+  if(open.length) change(`Alles eingekauft (${shopName(s)})`,d=>{open.forEach((id,i)=>{for(const e of d.liste)if(e.id===id&&!e.erledigt){e.erledigt=true;e.um=t+i}})});
   await finish(s);
 }
 function remove(id){change('− '+label(prod(id)),d=>{d.liste=d.liste.filter(l=>l.id!==id)})}
@@ -1077,8 +1076,8 @@ function shopBody(sh){
   const inCart=items.filter(l=>l.erledigt).sort((a,b)=>(a.um||0)-(b.um||0));
   for(const l of open) html+=listRow(l);
   if(inCart.length){html+=`<h2>Im Wagen</h2>`;inCart.forEach(l=>html+=listRow(l))}
-  if(inCart.length) html+=`<button class="btn" id="fin">Einkauf abschließen (${inCart.length})</button>`;
-  if(open.length) html+=`<button class="btn sec" id="allDone">✓ Alles eingekauft</button>`;
+  if(inCart.length&&open.length) html+=`<button class="btn" id="fin">Nur Abgehakte abschließen (${inCart.length})</button>`;
+  if(items.length) html+=`<button class="btn" id="allDone">✓ Alles eingekauft – Liste leeren</button>`;
   return html;
 }
 function bindShop(sh){
