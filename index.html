@@ -1144,9 +1144,9 @@ async function renderFamily(){
   /* ältere, nur auf diesem Gerät gespeicherte Einladungen einmalig übernehmen */
   const local=JSON.parse(localStorage.getItem(INV_KEY)||'[]');
   if(local.length&&!migrating){migrating=true;localStorage.removeItem(INV_KEY);for(const x of local){const h=await tokHash(x.t);if(!g[h]&&!(data.einladungen||[]).some(y=>y.h===h))await addInvite(x.n,x.t)}migrating=false;return renderFamily()}
-  /* angemeldete Nutzer fallen aus der Einladungsliste */
-  if((data.einladungen||[]).some(x=>g[x.h])) {change('Einladungen bereinigt',d=>{d.einladungen=(d.einladungen||[]).filter(x=>!(d.geraete||{})[x.h])});return}
-  const inv=await Promise.all((data.einladungen||[]).map(async x=>({...x,t:await decTok(x)})));
+  /* Einladungen bleiben verschlüsselt gespeichert; angemeldete Nutzer werden nur ausgeblendet.
+     Nach „Gerät freigeben“ erscheint die Einladung wieder und kann erneut gezeigt werden. */
+  const inv=await Promise.all((data.einladungen||[]).filter(x=>!g[x.h]).map(async x=>({...x,t:await decTok(x)})));
   const reg=Object.entries(g).sort((a,b)=>(a[1].rolle==='admin'?-1:1)-(b[1].rolle==='admin'?-1:1)||a[1].name.localeCompare(b[1].name,'de'));
   box.innerHTML=`<h3 style="margin-top:0">Nutzer</h3>
     ${reg.map(([h,x])=>`<div class="fam"><span>${esc(x.name)} <small class="hint">· ${x.rolle==='admin'?'Administrator · ':''}seit ${x.seit.split('-').reverse().join('.')}</small></span>${x.rolle!=='admin'?`<button data-free="${h}">Gerät freigeben</button>`:(h===myHash&&!addingMember?`<button id="invAdd">＋ Nutzer anlegen</button>`:'')}</div>`).join('')}
@@ -1166,6 +1166,7 @@ async function renderFamily(){
   box.querySelectorAll('[data-free]').forEach(b=>b.onclick=()=>{
     const h=b.dataset.free, n=g[h]?.name;
     if(!confirm(`Gerät von ${n} freigeben?\nDer Schlüssel kann danach auf einem neuen Gerät angemeldet werden.`))return;
+    showInv=(data.einladungen||[]).find(x=>x.h===h)?.id||null;  /* Einladung gleich wieder anzeigen */
     change('Gerät freigegeben: '+n,d=>{if(d.geraete)delete d.geraete[h]});
   });
   box.querySelectorAll('[data-qr]').forEach(b=>b.onclick=()=>{const k=b.dataset.qr;showInv=showInv===k?null:k;renderFamily()});
