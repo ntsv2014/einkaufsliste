@@ -445,6 +445,17 @@ function toggle(id){
   const v=!data.liste.find(l=>l.id===id)?.erledigt;
   change((v?'✓ ':'↺ ')+label(prod(id)),d=>{for(const e of d.liste)if(e.id===id){e.erledigt=v;if(v)e.um=t;else delete e.um}});
 }
+/* „Alles eingekauft“: alle offenen Artikel abhaken (in Laufweg-Reihenfolge, damit die gelernte Reihenfolge erhalten bleibt)
+   und den Einkauf sofort abschließen */
+async function allBought(s){
+  const open=shopItems(s).filter(l=>!l.erledigt).sort((a,b)=>rankOf(data,s,prod(a.id))-rankOf(data,s,prod(b.id))).map(l=>l.id);
+  if(!open.length) return;
+  const all=shopItems(s).length;
+  if(!confirm(`Alle ${all} Artikel als eingekauft abschließen?`)) return;
+  const t=Date.now();
+  change(`Alles eingekauft (${shopName(s)})`,d=>{open.forEach((id,i)=>{for(const e of d.liste)if(e.id===id&&!e.erledigt){e.erledigt=true;e.um=t+i}})});
+  await finish(s);
+}
 function remove(id){change('− '+label(prod(id)),d=>{d.liste=d.liste.filter(l=>l.id!==id)})}
 function finish(s=shop,auto=false){
   const n=shopItems(s).filter(l=>l.erledigt).length; if(!n) return;
@@ -1065,12 +1076,14 @@ function shopBody(sh){
   for(const l of open) html+=listRow(l);
   if(inCart.length){html+=`<h2>Im Wagen</h2>`;inCart.forEach(l=>html+=listRow(l))}
   if(inCart.length) html+=`<button class="btn" id="fin">Einkauf abschließen (${inCart.length})</button>`;
+  if(open.length) html+=`<button class="btn sec" id="allDone">✓ Alles eingekauft</button>`;
   return html;
 }
 function bindShop(sh){
   bindSearch();
   bindList();
   $('#fin')&&($('#fin').onclick=()=>finish(sh));
+  $('#allDone')&&($('#allDone').onclick=()=>allBought(sh));
   bindRows();
   $('#pSearch').onclick=()=>{panel=panel==='search'?null:'search';query='';render();if(panel==='search')$('#q').focus()};
   $('#pTop').onclick=()=>{panel=panel==='top'?null:'top';query='';render()};
