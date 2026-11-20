@@ -80,6 +80,13 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 .flash{animation:flash 1.6s ease}
 @keyframes flash{0%,40%{background:#fef3c7}100%{background:var(--card)}}
 #fAssBox{background:#f3f4f6;border-radius:10px;padding:8px 10px;margin-bottom:10px}
+.seg{display:flex;gap:8px;margin-bottom:10px}
+.seg button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:12px 6px;font-size:15px;font-weight:600}
+.seg button.on{background:var(--ink);color:#fff;border-color:var(--ink)}
+.toplist{background:#e9ecf1;border-radius:12px;padding:8px;margin-bottom:8px}
+.tophead{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 8px;font-size:13px;font-weight:600;color:var(--mute)}
+.tophead button{border:0;background:var(--ink);color:#fff;border-radius:8px;padding:6px 10px;font-size:13px}
+.prow .hits{flex:none;min-width:18px;font-size:12px;font-weight:700;color:var(--mute);text-align:center}
 .stats div{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid var(--line);font-size:14px}
 </style>
 </head>
@@ -131,7 +138,7 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 "use strict";
 const LS='einkauf.cfg';
 let cfg=JSON.parse(localStorage.getItem(LS)||'null');
-let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null; const cnt={};
+let data=null, sha=null, shop=null, query='', busy=false, view='home', group=null, panel=null; const cnt={};
 const $=s=>document.querySelector(s);
 const esc=s=>String(s??'').replace(/[&<>"]/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[c]));
 const today=()=>new Date().toISOString().slice(0,10);
@@ -486,7 +493,7 @@ function renderTabs(){
     const n=shopItems(g.id).filter(l=>!l.erledigt).length;
     if(!SHOPS.includes(g.id)&&!shopItems(g.id).length) return '';
     return `<button data-s="${g.id}" class="${!home&&g.id===shop?'on':''}">${esc(g.name)}${n?`<span class="n">${n}</span>`:''}</button>`}).join('');
-  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{query='';if(b.dataset.s){shop=b.dataset.s;view='shop'}else{view='home'}render();scrollTo(0,0)});
+  $('#tabs').querySelectorAll('button').forEach(b=>b.onclick=()=>{query='';panel=null;if(b.dataset.s){shop=b.dataset.s;view='shop'}else{view='home'}render();scrollTo(0,0)});
 }
 function render(){
   if(!cfg){renderSetup();return}
@@ -498,15 +505,20 @@ function render(){
   const f=freq(), onList=new Set(data.liste.filter(l=>!l.erledigt).map(l=>l.id));
   const cand=data.katalog.filter(p=>p.geschaeft===shop||p.auchBei===shop);
   const score=p=>(f[p.id]||0)*10+(p.favorit?5:0);
-  let html=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">📷</button></div>`;
-  if(query){
-    const q=query.toLowerCase();
-    const hits=cand.filter(p=>label(p).toLowerCase().includes(q)||p.kategorie.toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a)).slice(0,12);
-    html+=`<div class="sugg">${hits.map(p=>`<div data-add="${p.id}">${onList.has(p.id)?'➕ ':''}${esc(label(p))} <small>${esc(p.menge||'')} · ${esc(p.kategorie)}</small></div>`).join('')}
-      <div data-new="1">＋ „${esc(query)}“ als neuen Artikel anlegen</div></div>`;
-  }else{
-    const top=cand.filter(p=>!onList.has(p.id)).sort((a,b)=>score(b)-score(a)).slice(0,10);
-    if(top.length) html+=`<div class="chips">${top.map(p=>`<button data-add="${p.id}">${esc(p.marke?p.name+' ('+p.marke+')':p.name)}</button>`).join('')}</div>`;
+  let html=`<div class="seg"><button id="pSearch" class="${panel==='search'?'on':''}">🔍 Suchen / Neu</button><button id="pTop" class="${panel==='top'?'on':''}">⭐ Top-Hits</button></div>`;
+  if(panel==='search'){
+    html+=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">📷</button></div>`;
+    if(query){
+      const q=query.toLowerCase();
+      const hits=cand.filter(p=>label(p).toLowerCase().includes(q)||p.kategorie.toLowerCase().includes(q)).sort((a,b)=>score(b)-score(a)).slice(0,12);
+      html+=hits.map(prow).join('')+`<button class="btn sec" data-new="1" style="margin:4px 0 8px">＋ „${esc(query)}“ als neuen Artikel anlegen</button>`;
+    }
+  }else if(panel==='top'){
+    const f2=freq();
+    const top=[...cand].sort((a,b)=>score(b)-score(a)||a.name.localeCompare(b.name,'de'));
+    html+=`<div class="toplist"><div class="tophead"><span>${esc(data.geschaefte.find(g=>g.id===shop)?.name||'')} – nach Häufigkeit</span><button id="pClose">✕ Schließen</button></div>
+      ${top.map(p=>prow(p).replace('<div class="prow">',`<div class="prow"><span class="hits">${f2[p.id]||''}</span>`)).join('')}
+      <button class="btn sec" id="pClose2" style="margin:4px 0 0">Liste schließen</button></div>`;
   }
   const items=shopItems(shop);
   if(!items.length) html+=`<div class="empty">Nichts auf der Liste 🎉</div>`;
@@ -522,10 +534,13 @@ function render(){
   $('#main').innerHTML=html;
   bindSearch();
   $('#main').querySelectorAll('[data-add]').forEach(e=>e.onclick=()=>addItem(e.dataset.add));
-  $('#main').querySelectorAll('[data-new]').forEach(e=>e.onclick=newProduct);
   $('#main').querySelectorAll('[data-t]').forEach(e=>e.onclick=ev=>{if(!ev.target.dataset.x)toggle(e.dataset.t)});
   $('#main').querySelectorAll('[data-x]').forEach(e=>e.onclick=()=>remove(e.dataset.x));
   $('#fin')&&($('#fin').onclick=finish);
+  bindRows();
+  $('#pSearch').onclick=()=>{panel=panel==='search'?null:'search';query='';render();if(panel==='search')$('#q').focus()};
+  $('#pTop').onclick=()=>{panel=panel==='top'?null:'top';query='';render()};
+  ['#pClose','#pClose2'].forEach(k=>$(k)&&($(k).onclick=()=>{panel=null;render();scrollTo(0,0)}));
 }
 function renderStats(){
   if(!data) return;
