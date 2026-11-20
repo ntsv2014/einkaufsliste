@@ -1121,7 +1121,7 @@ function renderCatalog(){
   $('#cNew').onclick=()=>newProduct(false);
 }
 /* ---------- Produkt per Foto: Foto (verkleinert) landet im Daten-Repo unter fotos/; eine geplante Aufgabe
-   erkennt das Produkt dreimal täglich, legt es im Katalog an und löscht das Foto ---------- */
+   erkennt das Produkt einmal täglich abends, legt es im Katalog an und löscht das Foto ---------- */
 const fotoApi=p=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/fotos${p?'/'+p:''}`;
 async function shrink(file){
   const img=await createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>null);
@@ -1141,7 +1141,7 @@ async function uploadPhoto(file){
 async function showPending(){
   const el=$('#iFotoInfo'); if(!el) return;
   try{const r=await fetch(fotoApi()+'?t='+Date.now(),{headers:hdr()});const n=r.ok?(await r.json()).filter(x=>/\.jpe?g$/i.test(x.name)).length:0;
-    if($('#iFotoInfo')) $('#iFotoInfo').textContent=n?`${n} Foto${n>1?'s':''} warte${n>1?'n':'t'} auf Übernahme (mittags, nachmittags, abends)`:''}catch{}
+    if($('#iFotoInfo')) $('#iFotoInfo').textContent=n?`${n} Foto${n>1?'s':''} warte${n>1?'n':'t'} auf Übernahme – ab morgen im Katalog`:''}catch{}
 }
 function renderInfo(){
   $('#main').innerHTML=`<div class="setup"><h3 style="margin-top:0">ⓘ Einkaufsliste</h3>
@@ -1166,7 +1166,11 @@ function renderInfo(){
     const files=[...e.target.files]; if(!files.length) return;
     let ok=0;
     for(const f of files){setStatus(`Foto ${ok+1}/${files.length} wird hochgeladen…`);try{await uploadPhoto(f);ok++}catch(err){setStatus('⚠︎ '+err.message);break}}
-    if(ok) setStatus(`${ok} Foto${ok>1?'s':''} hochgeladen – das Produkt erscheint nach der nächsten Übernahme im Katalog`);
+    if(ok){
+      setStatus(`${ok} Foto${ok>1?'s':''} hochgeladen – ab morgen im Katalog`);
+      if(!localStorage.getItem('einkauf.fotoHinweis')){localStorage.setItem('einkauf.fotoHinweis','1');
+        alert('Danke! Fotos werden einmal täglich abends ausgewertet.\nDas Produkt ist am Folgetag im Katalog.')}
+    }
     showPending();
   };
   showPending();
