@@ -109,6 +109,11 @@ dialog.scan video{width:100%;height:100%;object-fit:cover}
 .seg{display:flex;gap:8px;margin-bottom:10px}
 .seg button{flex:1;border:1px solid var(--line);background:var(--card);border-radius:10px;padding:12px 6px;font-size:15px;font-weight:600}
 .seg button.on{background:var(--hdr);color:#fff;border-color:var(--hdr)}
+.seg button.zbtn{flex:0 0 auto;padding:12px 10px}
+.seg button{white-space:nowrap;font-size:14px;padding:12px 4px}
+.nimg{display:block;width:100%;border-radius:8px;margin:6px 0 4px;background:var(--line);min-height:60px;cursor:zoom-in}
+#imgView{position:fixed;inset:0;background:#000d;z-index:50;overflow:auto;display:flex;align-items:flex-start;justify-content:center}
+#imgView img{width:100%;max-width:1200px;touch-action:pinch-zoom}
 .toplist{background:var(--panel);border-radius:12px;padding:8px;margin-bottom:8px}
 .tophead{display:flex;align-items:center;justify-content:space-between;padding:2px 4px 8px;font-size:13px;font-weight:600;color:var(--mute)}
 .tophead button{border:0;background:var(--hdr);color:#fff;border-radius:8px;padding:6px 10px;font-size:13px}
@@ -1003,6 +1008,17 @@ function renderExtras(){
 }
 /* ---------- Tab „Notizen“: Karten mit Überschrift und Text; zuklappen merkt sich jedes Gerät ---------- */
 const NOTE_KEY='einkauf.notizenZu';
+/* Bilder aus dem privaten Daten-Repo (z. B. ausgewertete Einkaufszettel) – nur mit Schlüssel abrufbar */
+const imgCache={};
+async function repoImage(path){
+  if(imgCache[path]) return imgCache[path];
+  try{const r=await fetch(`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`,{headers:{...hdr(),Accept:'application/vnd.github.raw'}});
+    if(!r.ok) return null; return imgCache[path]=URL.createObjectURL(await r.blob())}catch{return null}
+}
+async function deleteRepoFile(path){
+  try{const u=`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${path}`;const r=await fetch(u+'?t='+Date.now(),{headers:hdr()});if(!r.ok)return;
+    const {sha}=await r.json();await fetch(u,{method:'DELETE',headers:hdr(),body:JSON.stringify({message:'Zettel-Foto gelöscht ('+(cfg.name||'?')+')',sha})})}catch{}
+}
 function renderNotes(){
   const zu=new Set(JSON.parse(localStorage.getItem(NOTE_KEY)||'[]'));
   const form=n=>`<div class="scard note"><input id="nT" placeholder="Überschrift" value="${esc(n?.titel||'')}" autocomplete="off">
@@ -1014,7 +1030,7 @@ function renderNotes(){
     const closed=zu.has(n.id);
     html+=`<div class="scard note"><div class="shead" data-nz="${n.id}"><span class="chev">${closed?'▸':'▾'}</span><b>${esc(n.titel||'Notiz')}</b><span style="flex:1"></span>
       <button class="del" data-ne="${n.id}" title="Bearbeiten">✎</button><button class="del" data-nd="${n.id}" title="Löschen">🗑</button></div>
-      ${closed?'':`<div class="nbody">${esc(n.text||'')||'<span class="hint">(leer)</span>'}</div>`}</div>`;
+      ${closed?'':`${n.bild?`<img class="nimg" data-bild="${esc(n.bild)}" alt="Foto">`:''}<div class="nbody">${esc(n.text||'')||(n.bild?'':'<span class="hint">(leer)</span>')}</div>`}</div>`;
   }
   if(editNote==='neu') html+=form(null);
   else if(!data.notizen.length) html+=`<div class="empty">Noch keine Notizen.</div>`;
@@ -1023,7 +1039,11 @@ function renderNotes(){
   const m=$('#main');
   m.querySelectorAll('[data-nz]').forEach(h=>h.onclick=e=>{if(e.target.closest('button'))return;const id=h.dataset.nz;zu.has(id)?zu.delete(id):zu.add(id);localStorage.setItem(NOTE_KEY,JSON.stringify([...zu]));render()});
   m.querySelectorAll('[data-ne]').forEach(b=>b.onclick=()=>{editNote=b.dataset.ne;render();$('#nX').focus()});
-  m.querySelectorAll('[data-nd]').forEach(b=>b.onclick=()=>{const n=data.notizen.find(x=>x.id===b.dataset.nd);if(!confirm(`Notiz „${n?.titel||'Notiz'}“ löschen?`))return;change('Notiz gelöscht: '+(n?.titel||''),d=>{d.notizen=(d.notizen||[]).filter(x=>x.id!==n.id)})});
+  m.querySelectorAll('[data-nd]').forEach(b=>b.onclick=()=>{const n=data.notizen.find(x=>x.id===b.dataset.nd);if(!confirm(`Notiz „${n?.titel||'Notiz'}“ löschen?`))return;if(n?.bild)deleteRepoFile(n.bild);change('Notiz gelöscht: '+(n?.titel||''),d=>{d.notizen=(d.notizen||[]).filter(x=>x.id!==n.id)})});
+  m.querySelectorAll('[data-bild]').forEach(async img=>{
+    const u=await repoImage(img.dataset.bild); if(u) img.src=u; else img.replaceWith(Object.assign(document.createElement('div'),{className:'hint',textContent:'(Foto nicht mehr vorhanden)'}));
+    img.onclick=()=>{if(!img.src)return;const v=document.createElement('div');v.id='imgView';v.innerHTML=`<img src="${img.src}">`;v.onclick=()=>v.remove();document.body.append(v)};
+  });
   $('#nAdd')&&($('#nAdd').onclick=()=>{editNote='neu';render();$('#nT').focus()});
   $('#nCancel')&&($('#nCancel').onclick=()=>{editNote=null;render()});
   $('#nSave')&&($('#nSave').onclick=()=>{
@@ -1069,7 +1089,8 @@ function shopBody(sh){
   const own=data.katalog.filter(p=>p.geschaeft===sh||p.auchBei===sh);
   const score=p=>(f[p.id]||0)*10+(p.favorit?5:0);
   const cand=own;
-  let html=`<div class="seg"><button id="pSearch" class="${panel==='search'?'on':''}">🔍 Suchen / Neu</button><button id="pTop" class="${panel==='top'?'on':''}">⭐ Top-Hits</button></div>`;
+  let html=`<div class="seg"><button id="pSearch" class="${panel==='search'?'on':''}">🔍 Suchen/Neu</button><button id="pTop" class="${panel==='top'?'on':''}">⭐ Top-Hits</button><button id="pZettel" class="zbtn" title="Handgeschriebenen Einkaufszettel fotografieren">📷 Zettel</button></div>
+    <input type="file" id="zIn" accept="image/*" capture="environment" hidden>`;
   if(panel==='search'){
     html+=`<div class="add"><input id="q" placeholder="Artikel suchen oder neu…" autocomplete="off" value="${esc(query)}"><button class="scanb" id="bScan" title="Barcode scannen">${BC_ICON}</button></div>`;
     if(query){
@@ -1102,6 +1123,15 @@ function bindShop(sh){
   $('#pSearch').onclick=()=>{panel=panel==='search'?null:'search';query='';render();if(panel==='search')$('#q').focus()};
   $('#pTop').onclick=()=>{panel=panel==='top'?null:'top';query='';render()};
   ['#pClose','#pClose2'].forEach(k=>$(k)&&($(k).onclick=()=>{panel=null;render()}));
+  $('#pZettel').onclick=()=>$('#zIn').click();
+  $('#zIn').onchange=async e=>{
+    const f=e.target.files[0]; if(!f) return;
+    setStatus('Zettel wird hochgeladen…');
+    try{await uploadPhoto(f,'zettel',sh);setStatus('Zettel hochgeladen – die Artikel erscheinen in wenigen Minuten auf den Listen');
+      if(!localStorage.getItem('einkauf.zettelHinweis')){localStorage.setItem('einkauf.zettelHinweis','1');
+        alert('Danke! Der Zettel wird jetzt ausgewertet.\nIn ein paar Minuten stehen die Artikel auf den passenden Listen.\nDas Foto findest du danach unter „Notizen“ – Stellen, die nicht gelesen werden konnten, sind dort rot markiert.')}}
+    catch(err){setStatus('⚠︎ '+err.message)}
+  };
 }
 /* ---------- Produktkatalog bearbeiten ---------- */
 let catQ='', catShop='';
@@ -1134,20 +1164,20 @@ function renderCatalog(){
 }
 /* ---------- Produkt per Foto: Foto (verkleinert) landet im Daten-Repo unter fotos/; eine geplante Aufgabe
    erkennt das Produkt einmal täglich abends, legt es im Katalog an und löscht das Foto ---------- */
-const fotoApi=p=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/fotos${p?'/'+p:''}`;
-async function shrink(file){
+const fotoApi=(p,dir='fotos')=>`https://api.github.com/repos/${cfg.owner}/${cfg.repo}/contents/${dir}${p?'/'+p:''}`;
+async function shrink(file,max=1600){
   const img=await createImageBitmap(file,{imageOrientation:'from-image'}).catch(()=>null);
   if(!img) return new Uint8Array(await file.arrayBuffer());
-  const k=Math.min(1,1600/Math.max(img.width,img.height)), c=document.createElement('canvas');
+  const k=Math.min(1,max/Math.max(img.width,img.height)), c=document.createElement('canvas');
   c.width=Math.round(img.width*k); c.height=Math.round(img.height*k); c.getContext('2d').drawImage(img,0,0,c.width,c.height);
   const blob=await new Promise(r=>c.toBlob(r,'image/jpeg',0.82));
   return new Uint8Array(await blob.arrayBuffer());
 }
-async function uploadPhoto(file){
-  const bytes=await shrink(file); let bin=''; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
+async function uploadPhoto(file,dir='fotos',tag=''){
+  const bytes=await shrink(file,dir==='zettel'?2400:1600); let bin=''; for(let i=0;i<bytes.length;i+=0x8000) bin+=String.fromCharCode(...bytes.subarray(i,i+0x8000));
   const who=(cfg.name||'x').normalize('NFD').replace(/[^A-Za-z0-9]/g,'').slice(0,12)||'x';
-  const name=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15)+'_'+who+'_'+Math.random().toString(36).slice(2,6)+'.jpg';
-  const r=await fetch(fotoApi(name),{method:'PUT',headers:hdr(),body:JSON.stringify({message:'Produktfoto ('+(cfg.name||'?')+')',content:btoa(bin)})});
+  const name=new Date().toISOString().replace(/[-:]/g,'').replace('T','_').slice(0,15)+'_'+who+(tag?'_'+tag:'')+'_'+Math.random().toString(36).slice(2,6)+'.jpg';
+  const r=await fetch(fotoApi(name,dir),{method:'PUT',headers:hdr(),body:JSON.stringify({message:(dir==='zettel'?'Einkaufszettel':'Produktfoto')+' ('+(cfg.name||'?')+')',content:btoa(bin)})});
   if(!r.ok) throw new Error('Foto-Upload fehlgeschlagen ('+r.status+')');
 }
 async function showPending(){
