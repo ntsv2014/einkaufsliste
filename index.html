@@ -1127,9 +1127,9 @@ function bindShop(sh){
   $('#zIn').onchange=async e=>{
     const f=e.target.files[0]; if(!f) return;
     setStatus('Zettel wird hochgeladen…');
-    try{await uploadPhoto(f,'zettel',sh);setStatus('Zettel hochgeladen – die Artikel erscheinen innerhalb einer Stunde auf den Listen');
+    try{await uploadPhoto(f,'zettel',sh);setStatus('Zettel hochgeladen – die Artikel erscheinen in wenigen Minuten auf den Listen');
       if(!localStorage.getItem('einkauf.zettelHinweis')){localStorage.setItem('einkauf.zettelHinweis','1');
-        alert('Danke! Zettel werden stündlich (8–20 Uhr) ausgewertet.\nSpätestens nach einer Stunde stehen die Artikel auf den passenden Listen.\nDas Foto findest du danach unter „Notizen“ – Stellen, die nicht gelesen werden konnten, sind dort rot markiert.')}}
+        alert('Danke! Der Zettel wird jetzt ausgewertet.\nIn wenigen Minuten stehen die Artikel auf den passenden Listen.\nDas Foto findest du danach unter „Notizen“ – Stellen, die nicht gelesen werden konnten, sind dort rot markiert.')}}
     catch(err){setStatus('⚠︎ '+err.message)}
   };
 }
