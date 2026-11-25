@@ -759,10 +759,16 @@ const SALE_G='__angebote__';
 /* Alternativen: data.alternativen = [{fuer:<Katalog-id>, geschaeft, bis, name, marke, titel}] – gleiche Produktart, andere Marke, im Angebot */
 const altSale=()=>(data.alternativen||[]).filter(a=>(!a.bis||a.bis>=today())&&prod(a.fuer));
 const altProd=a=>data.katalog.find(p=>p.name===a.name&&(p.marke||'')===(a.marke||'')&&p.geschaeft===a.geschaeft);
-function altRow(a){
+/* gleiche Alternative für mehrere eigene Produkte nur einmal zeigen („statt A, B“) */
+function altGroups(){
+  const m=new Map();
+  for(const a of altSale()){const k=[a.geschaeft,a.marke||'',a.name].join('|');m.has(k)?m.get(k).statt.push(prod(a.fuer)):m.set(k,{a,statt:[prod(a.fuer)]})}
+  return [...m.values()];
+}
+function altRow({a,statt}){
   const i=(data.alternativen||[]).indexOf(a), f=prod(a.fuer), p=altProd(a), e=p&&openEntry(p.id);
   const cls=a.geschaeft==='edeka'?'c-e':a.geschaeft==='budni'?'c-b':'c-o';
-  return `<div class="prow tint" style="--h:${hueOf(f.kategorie)}"><div class="t">${esc([a.marke,a.name].filter(Boolean).join(' '))}${SALE}<br><small>statt ${esc(label(f))}${a.titel?' · '+esc(a.titel):''}</small></div>
+  return `<div class="prow tint" style="--h:${hueOf(f.kategorie)}"><div class="t">${esc([a.marke,a.name].filter(Boolean).join(' '))}${SALE}<br><small>statt ${statt.map(x=>esc(label(x))).join(', ')}${a.titel?' · '+esc(a.titel):''}</small></div>
     ${e?`<span class="qbtn" style="pointer-events:none">${fmtQ(p,e.anzahl)}</span>`:''}
     <button class="cartb ${cls} ${e?'in':''}" data-alt="${i}" title="${e?'Von der Liste nehmen':'Auf die '+esc(shopName(a.geschaeft))+'-Liste'}">${CART_SVG}${e?'<span class="ck">✓</span>':''}</button></div>`;
 }
@@ -787,7 +793,7 @@ function renderGroup(){
     $('#main').innerHTML=`<div class="ghead"><button id="gBack">‹ Zurück</button><h3>% Angebote</h3></div>
       ${bis.length?`<p class="hint" style="margin:-4px 0 8px">gültig bis ${bis.map(b=>new Date(b+'T12:00').toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'numeric'})).join(' bzw. ')}</p>`:''}
       ${ps.map(prow).join('')||'<div class="empty">Zurzeit keine Angebote für eure Produkte.</div>'}
-      ${altSale().length?`<h2>Alternativen im Angebot</h2><p class="hint" style="margin:-4px 0 8px">Andere Marken für Produkte, die ihr sonst kauft</p>${altSale().map(altRow).join('')}`:''}`;
+      ${altSale().length?`<h2>Alternativen im Angebot</h2><p class="hint" style="margin:-4px 0 8px">Andere Marken für Produkte, die ihr sonst kauft</p>${altGroups().map(altRow).join('')}`:''}`;
     bindRows(); $('#gBack').onclick=()=>{view='home';render()};
     $('#main').querySelectorAll('[data-alt]').forEach(b=>b.onclick=()=>altCart(+b.dataset.alt));
     return;
