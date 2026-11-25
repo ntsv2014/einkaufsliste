@@ -69,10 +69,7 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 dialog input,dialog select{width:100%;font-size:16px;padding:10px;margin:4px 0 10px;border:1px solid var(--line);border-radius:8px}
 dialog label{font-size:13px;color:var(--mute)}
 .row{display:flex;gap:8px}
-.tile.saleTile .e{font-weight:800;color:#b45309}
-.tile.saleTile{background:#fff3c4;border:2px solid #f5c542}
-[data-theme=dark] .tile.saleTile{background:#3d3210;border-color:#8a6d12}
-[data-theme=dark] .tile.saleTile .e{color:#fbbf24}
+.saleBig{display:inline-flex;align-items:center;justify-content:center;width:42px;height:42px;border-radius:50%;background:#dc2626;color:#fff;font-size:24px;font-weight:800}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-top:12px}
 .tile{position:relative;background:var(--card);border:0;border-radius:14px;padding:14px 6px 10px;text-align:center;font-size:13px;font-weight:600;color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.06);min-height:96px}
 .tile .e{display:block;font-size:34px;line-height:1.2;margin-bottom:4px}
@@ -658,7 +655,7 @@ function renderHome(){
     html+=hits.map(prow).join('')+`<button class="btn sec" data-new="1">＋ „${esc(query)}“ als neuen Artikel anlegen</button>`;
   }else{
     const nSale=data.katalog.filter(onSale).length;
-    html+=`<div class="tiles">${nSale?`<button class="tile saleTile" data-g="${SALE_G}"><span class="e">%</span>Angebote<span class="n">${nSale}</span></button>`:''}${groups().map(k=>`<button class="tile" data-g="${esc(k)}"><span class="e">${ICON[k]||'📦'}</span>${esc(k)}${on[k]?`<span class="n">${on[k]}</span>`:''}</button>`).join('')}</div>`;
+    html+=`<div class="tiles">${nSale?`<button class="tile saleTile" data-g="${SALE_G}"><span class="e"><span class="saleBig">%</span></span>Angebote<span class="n">${nSale}</span></button>`:''}${groups().map(k=>`<button class="tile" data-g="${esc(k)}"><span class="e">${ICON[k]||'📦'}</span>${esc(k)}${on[k]?`<span class="n">${on[k]}</span>`:''}</button>`).join('')}</div>`;
   }
   $('#main').innerHTML=html;
   bindSearch(); bindRows();
