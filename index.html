@@ -69,6 +69,10 @@ dialog::backdrop{background:rgba(0,0,0,.5)}
 dialog input,dialog select{width:100%;font-size:16px;padding:10px;margin:4px 0 10px;border:1px solid var(--line);border-radius:8px}
 dialog label{font-size:13px;color:var(--mute)}
 .row{display:flex;gap:8px}
+.tile.saleTile .e{font-weight:800;color:#b45309}
+.tile.saleTile{background:#fff3c4;border:2px solid #f5c542}
+[data-theme=dark] .tile.saleTile{background:#3d3210;border-color:#8a6d12}
+[data-theme=dark] .tile.saleTile .e{color:#fbbf24}
 .tiles{display:grid;grid-template-columns:repeat(auto-fill,minmax(104px,1fr));gap:8px;margin-top:12px}
 .tile{position:relative;background:var(--card);border:0;border-radius:14px;padding:14px 6px 10px;text-align:center;font-size:13px;font-weight:600;color:var(--fg);box-shadow:0 1px 3px rgba(0,0,0,.06);min-height:96px}
 .tile .e{display:block;font-size:34px;line-height:1.2;margin-bottom:4px}
@@ -653,7 +657,8 @@ function renderHome(){
     const hits=data.katalog.filter(p=>label(p).toLowerCase().includes(q)).sort((a,b)=>(f[b.id]||0)-(f[a.id]||0)).slice(0,25);
     html+=hits.map(prow).join('')+`<button class="btn sec" data-new="1">＋ „${esc(query)}“ als neuen Artikel anlegen</button>`;
   }else{
-    html+=`<div class="tiles">${groups().map(k=>`<button class="tile" data-g="${esc(k)}"><span class="e">${ICON[k]||'📦'}</span>${esc(k)}${on[k]?`<span class="n">${on[k]}</span>`:''}</button>`).join('')}</div>`;
+    const nSale=data.katalog.filter(onSale).length;
+    html+=`<div class="tiles">${nSale?`<button class="tile saleTile" data-g="${SALE_G}"><span class="e">%</span>Angebote<span class="n">${nSale}</span></button>`:''}${groups().map(k=>`<button class="tile" data-g="${esc(k)}"><span class="e">${ICON[k]||'📦'}</span>${esc(k)}${on[k]?`<span class="n">${on[k]}</span>`:''}</button>`).join('')}</div>`;
   }
   $('#main').innerHTML=html;
   bindSearch(); bindRows();
@@ -752,8 +757,18 @@ function bindSearch(){
   const q=$('#q'); if(!q) return;
   q.oninput=()=>{query=q.value;render();const n=$('#q');n.focus();n.setSelectionRange(n.value.length,n.value.length)};
 }
+/* Pseudo-Gruppe „Angebote“: alle Katalogprodukte mit gültigem Angebot (bleiben zusätzlich in ihren Gruppen) */
+const SALE_G='__angebote__';
 function renderGroup(){
   const f=freq();
+  if(group===SALE_G){
+    const ps=data.katalog.filter(onSale).sort((a,b)=>SHOPS().indexOf(a.geschaeft)-SHOPS().indexOf(b.geschaeft)||groups().indexOf(a.kategorie)-groups().indexOf(b.kategorie)||a.name.localeCompare(b.name,'de'));
+    const bis=[...new Set(ps.map(p=>data.angebote[p.id]?.bis).filter(Boolean))].sort();
+    $('#main').innerHTML=`<div class="ghead"><button id="gBack">‹ Zurück</button><h3>% Angebote</h3></div>
+      ${bis.length?`<p class="hint" style="margin:-4px 0 8px">gültig bis ${bis.map(b=>new Date(b+'T12:00').toLocaleDateString('de-DE',{weekday:'short',day:'numeric',month:'numeric'})).join(' bzw. ')}</p>`:''}
+      ${ps.map(prow).join('')||'<div class="empty">Zurzeit keine Angebote.</div>'}`;
+    bindRows(); $('#gBack').onclick=()=>{view='home';render()}; return;
+  }
   const ps=data.katalog.filter(p=>p.kategorie===group).sort((a,b)=>((f[b.id]||0)+(b.favorit?.5:0))-((f[a.id]||0)+(a.favorit?.5:0))||a.name.localeCompare(b.name,'de'));
   $('#main').innerHTML=`<div class="ghead"><button id="gBack">‹ Zurück</button><h3>${ICON[group]||'📦'} ${esc(group)}</h3></div>
     ${ps.map(prow).join('')||'<div class="empty">Noch keine Produkte in dieser Gruppe.</div>'}
